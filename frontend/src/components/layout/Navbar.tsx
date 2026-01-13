@@ -1,0 +1,130 @@
+'use client'
+
+import Link from 'next/link'
+import { useState } from 'react'
+import { Logo } from '@/components/ui/Logo'
+import { Menu, X, Search, Plus, User } from 'lucide-react'
+
+interface NavbarProps {
+  user?: {
+    id: string
+    display_name: string
+    avatar_url?: string
+  } | null
+}
+
+export function Navbar({ user }: NavbarProps) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+
+  return (
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-tbt-bg/80 backdrop-blur-xl border-b border-tbt-border/50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16">
+          {/* Logo */}
+          <Link href="/" className="flex-shrink-0">
+            <Logo size="sm" />
+          </Link>
+
+          {/* Desktop Navigation */}
+          <div className="hidden md:flex items-center gap-1">
+            <Link href="/verificar" className="btn-ghost text-sm">
+              <Search className="w-4 h-4" />
+              Verificar
+            </Link>
+            {user ? (
+              <>
+                <Link href="/crear" className="btn-ghost text-sm">
+                  <Plus className="w-4 h-4" />
+                  Crear TBT
+                </Link>
+                <Link href="/dashboard" className="btn-ghost text-sm">
+                  Dashboard
+                </Link>
+                <div className="w-px h-6 bg-tbt-border mx-2" />
+                <Link href="/perfil" className="flex items-center gap-2 btn-ghost text-sm">
+                  {user.avatar_url ? (
+                    <img 
+                      src={user.avatar_url} 
+                      alt={user.display_name}
+                      className="w-7 h-7 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-7 h-7 rounded-full bg-gradient-accent flex items-center justify-center">
+                      <span className="text-white text-xs font-medium">
+                        {user.display_name.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                  <span className="max-w-[100px] truncate">{user.display_name}</span>
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link href="/login" className="btn-ghost text-sm">
+                  Iniciar Sesión
+                </Link>
+                <Link href="/registro" className="btn-primary text-sm">
+                  Registrarse
+                </Link>
+              </>
+            )}
+          </div>
+
+          {/* Mobile menu button */}
+          <button
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            className="md:hidden btn-ghost p-2"
+          >
+            {isMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile Navigation */}
+      {isMenuOpen && (
+        <div className="md:hidden bg-tbt-card border-t border-tbt-border">
+          <div className="px-4 py-4 space-y-2">
+            <Link 
+              href="/verificar" 
+              className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-tbt-border/50 transition-colors"
+              onClick={() => setIsMenuOpen(false)}
+            >
+              <Search className="w-5 h-5 text-tbt-muted" />
+              <span>Verificar TBT</span>
+            </Link>
+            
+            {user ? (
+              <>
+                <Link 
+                  href="/crear" 
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-tbt-border/50 transition-colors"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  <Plus className="w-5 h-5 text-tbt-muted" />
+                  <span>Crear TBT</span>
+                </Link>
+                <Link 
+                  href="/dashboard" 
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-tbt-border/50 transition-colors"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  <User className="w-5 h-5 text-tbt-muted" />
+                  <span>Mi Dashboard</span>
+                </Link>
+              </>
+            ) : (
+              <div className="flex gap-2 pt-2">
+                <Link href="/login" className="btn-secondary flex-1 text-center">
+                  Iniciar Sesión
+                </Link>
+                <Link href="/registro" className="btn-primary flex-1 text-center">
+                  Registrarse
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </nav>
+  )
+}
