@@ -253,10 +253,6 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
           setError('El alias público es requerido')
           return false
         }
-        if (creatorData.creatorType === 'individual' && !creatorData.legalName.trim()) {
-          setError('El nombre legal es requerido')
-          return false
-        }
         if (creatorData.creatorType === 'group' && !creatorData.collectiveName.trim()) {
           setError('El nombre del colectivo es requerido')
           return false
@@ -561,19 +557,6 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                 </div>
 
                 {/* Dynamic fields based on creator type */}
-                {creatorData.creatorType === 'individual' && (
-                  <div>
-                    <label className="input-label">Nombre Legal Completo *</label>
-                    <input
-                      type="text"
-                      value={creatorData.legalName}
-                      onChange={(e) => updateCreator({ legalName: e.target.value })}
-                      placeholder="Tu nombre legal completo"
-                      className="input"
-                    />
-                  </div>
-                )}
-
                 {creatorData.creatorType === 'group' && (
                   <>
                     <div>
