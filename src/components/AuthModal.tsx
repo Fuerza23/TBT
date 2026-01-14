@@ -404,7 +404,7 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
                 </div>
                 <p className="text-xl text-tbt-text font-medium">¡Código enviado!</p>
                 <p className="text-sm text-tbt-muted mt-2">
-                  Ingresa el código de 6 dígitos enviado a:
+                  Ingresa el código de 8 dígitos enviado a:
                 </p>
                 <p className="text-tbt-primary font-medium mt-1">
                   {method === 'email' ? email : `${selectedCountry.flag} ${selectedCountry.dial} ${phone}`}
@@ -413,16 +413,16 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
 
               <div>
                 <label className="input-label">Código de verificación</label>
-                <input
-                  type="text"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder="000000"
-                  className="input text-center text-2xl tracking-[0.5em] font-mono"
-                  maxLength={6}
-                  required
-                  autoFocus
-                />
+                  <input
+                    type="text"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                    placeholder="00000000"
+                    className="input text-center text-2xl tracking-[0.5em] font-mono"
+                    maxLength={8}
+                    required
+                    autoFocus
+                  />
               </div>
 
               {error && (
@@ -434,7 +434,7 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
 
               <button
                 type="submit"
-                disabled={isLoading || otp.length < 6}
+                disabled={isLoading || otp.length < 8}
                 className="btn-primary w-full mt-6"
               >
                 {isLoading ? (
