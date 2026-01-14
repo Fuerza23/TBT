@@ -8,13 +8,37 @@ import { Menu, X, Search, Plus, User } from 'lucide-react'
 interface NavbarProps {
   user?: {
     id: string
-    display_name: string
-    avatar_url?: string
+    display_name?: string | null
+    email?: string | null
+    avatar_url?: string | null
   } | null
 }
 
 export function Navbar({ user }: NavbarProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+
+  // Obtener las iniciales o usar un fallback
+  const getInitials = () => {
+    if (user?.display_name) {
+      return user.display_name.charAt(0).toUpperCase()
+    }
+    if (user?.email) {
+      return user.email.charAt(0).toUpperCase()
+    }
+    return '?'
+  }
+
+  // Obtener el nombre para mostrar
+  const getDisplayName = () => {
+    if (user?.display_name) {
+      return user.display_name
+    }
+    if (user?.email) {
+      // Mostrar solo la parte antes del @
+      return user.email.split('@')[0]
+    }
+    return 'Usuario'
+  }
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-tbt-bg/80 backdrop-blur-xl border-b border-tbt-border/50">
@@ -45,17 +69,17 @@ export function Navbar({ user }: NavbarProps) {
                   {user.avatar_url ? (
                     <img 
                       src={user.avatar_url} 
-                      alt={user.display_name}
+                      alt={getDisplayName()}
                       className="w-7 h-7 rounded-full object-cover"
                     />
                   ) : (
                     <div className="w-7 h-7 rounded-full bg-gradient-accent flex items-center justify-center">
                       <span className="text-white text-xs font-medium">
-                        {user.display_name.charAt(0).toUpperCase()}
+                        {getInitials()}
                       </span>
                     </div>
                   )}
-                  <span className="max-w-[100px] truncate">{user.display_name}</span>
+                  <span className="max-w-[100px] truncate">{getDisplayName()}</span>
                 </Link>
               </>
             ) : (

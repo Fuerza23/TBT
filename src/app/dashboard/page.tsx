@@ -47,7 +47,18 @@ export default function DashboardPage() {
         .single()
 
       if (profile) {
-        setUser(profile)
+        // Agregar email del authUser al perfil si no tiene display_name
+        setUser({
+          ...profile,
+          email: profile.email || authUser.email,
+        })
+      } else {
+        // Si no hay perfil, crear uno básico con los datos del auth
+        setUser({
+          id: authUser.id,
+          email: authUser.email,
+          display_name: authUser.user_metadata?.display_name || null,
+        } as Profile)
       }
 
       // Cargar obras del usuario
@@ -116,7 +127,7 @@ export default function DashboardPage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
             <div>
               <h1 className="text-3xl font-display font-bold text-tbt-text">
-                Hola, {user?.display_name} 👋
+                Hola, {user?.display_name || user?.email?.split('@')[0] || 'Creador'} 👋
               </h1>
               <p className="text-tbt-muted mt-1">
                 Gestiona tus obras y certificados
