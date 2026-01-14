@@ -43,9 +43,10 @@ type Method = 'phone' | 'email'
 interface AuthModalProps {
   isOpen: boolean
   onClose: () => void
+  onAuthSuccess?: () => void // Callback cuando el usuario se registra exitosamente
 }
 
-export function AuthModal({ isOpen, onClose }: AuthModalProps) {
+export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
   const [step, setStep] = useState<Step>('contact')
   const [method, setMethod] = useState<Method>('phone')
   const [email, setEmail] = useState('')
@@ -148,8 +149,12 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
           if (!error && data.session) {
             onClose()
-            router.push('/crear')
-            router.refresh()
+            if (onAuthSuccess) {
+              onAuthSuccess()
+            } else {
+              router.push('/crear')
+              router.refresh()
+            }
             return
           }
 
@@ -186,8 +191,12 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
         if (data.session) {
           onClose()
-          router.push('/crear')
-          router.refresh()
+          if (onAuthSuccess) {
+            onAuthSuccess()
+          } else {
+            router.push('/crear')
+            router.refresh()
+          }
         }
       }
     } catch (err: any) {

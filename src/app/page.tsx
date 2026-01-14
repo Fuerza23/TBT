@@ -4,10 +4,17 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Logo } from '@/components/ui/Logo'
 import { AuthModal } from '@/components/AuthModal'
+import { CreateTBTModal } from '@/components/CreateTBTModal'
 import { ArrowRight } from 'lucide-react'
 
 export default function HomePage() {
-  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+
+  const handleAuthSuccess = () => {
+    setIsAuthModalOpen(false)
+    setIsCreateModalOpen(true)
+  }
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-tbt-bg">
@@ -25,7 +32,7 @@ export default function HomePage() {
         {/* Botón principal */}
         <div className="animate-in-delay-1">
           <button 
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => setIsAuthModalOpen(true)}
             className="btn-primary text-xl px-12 py-5 shadow-2xl shadow-tbt-primary/25 hover:shadow-tbt-primary/40 transition-all hover:scale-105"
           >
             Crear mi primer TBT
@@ -46,8 +53,15 @@ export default function HomePage() {
 
       {/* Auth Modal */}
       <AuthModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
+        isOpen={isAuthModalOpen} 
+        onClose={() => setIsAuthModalOpen(false)}
+        onAuthSuccess={handleAuthSuccess}
+      />
+
+      {/* Create TBT Modal */}
+      <CreateTBTModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
       />
     </main>
   )
