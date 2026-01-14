@@ -736,7 +736,7 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                         type="date"
                         value={workData.creationDate}
                         onChange={(e) => updateWork({ creationDate: e.target.value })}
-                        className="input cursor-pointer"
+                        className="input cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-100 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
                       />
                     </div>
                   </div>
