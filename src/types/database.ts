@@ -11,6 +11,9 @@ export type RoyaltyType = 'fixed' | 'percentage'
 export type TransferType = 'automatic' | 'manual' | 'gift'
 export type TransferStatus = 'pending' | 'payment_pending' | 'completed' | 'cancelled'
 export type AlertType = 'plagiarism' | 'view' | 'transfer_request' | 'payment' | 'system'
+export type CreatorType = 'individual' | 'group' | 'corporation'
+export type OriginalityDeclaration = 'original' | 'derivative' | 'authorized_edition'
+export type TBTStatus = 'draft' | 'pending_payment' | 'immutable' | 'transferred'
 
 export interface Database {
   public: {
@@ -27,6 +30,20 @@ export interface Database {
           is_creator: boolean
           created_at: string
           updated_at: string
+          // New v2 fields
+          creator_type: CreatorType | null
+          legal_name_full: string | null
+          collective_name: string | null
+          lead_representative: string | null
+          entity_name: string | null
+          tax_id: string | null
+          public_alias: string | null
+          physical_address: Json | null
+          credentials: string | null
+          social_linkedin: string | null
+          social_website: string | null
+          social_instagram: string | null
+          social_other: string[] | null
         }
         Insert: {
           id: string
@@ -37,6 +54,19 @@ export interface Database {
           bio?: string | null
           avatar_url?: string | null
           is_creator?: boolean
+          creator_type?: CreatorType | null
+          legal_name_full?: string | null
+          collective_name?: string | null
+          lead_representative?: string | null
+          entity_name?: string | null
+          tax_id?: string | null
+          public_alias?: string | null
+          physical_address?: Json | null
+          credentials?: string | null
+          social_linkedin?: string | null
+          social_website?: string | null
+          social_instagram?: string | null
+          social_other?: string[] | null
         }
         Update: {
           display_name?: string
@@ -44,6 +74,19 @@ export interface Database {
           bio?: string | null
           avatar_url?: string | null
           is_creator?: boolean
+          creator_type?: CreatorType | null
+          legal_name_full?: string | null
+          collective_name?: string | null
+          lead_representative?: string | null
+          entity_name?: string | null
+          tax_id?: string | null
+          public_alias?: string | null
+          physical_address?: Json | null
+          credentials?: string | null
+          social_linkedin?: string | null
+          social_website?: string | null
+          social_instagram?: string | null
+          social_other?: string[] | null
         }
       }
       works: {
@@ -63,6 +106,23 @@ export interface Database {
           created_at: string
           certified_at: string | null
           blockchain_hash: string | null
+          // New v2 fields
+          primary_material: string | null
+          creation_date: string | null
+          is_published: boolean
+          asset_links: string[] | null
+          originality_type: OriginalityDeclaration | null
+          original_work_reference: string | null
+          plagiarism_scan_result: Json | null
+          plagiarism_scan_date: string | null
+          context_data: Json | null
+          context_summary: string | null
+          context_signed_at: string | null
+          payment_status: string | null
+          payment_intent_id: string | null
+          payment_completed_at: string | null
+          mms_sent_at: string | null
+          mms_delivery_status: string | null
         }
         Insert: {
           id?: string
@@ -77,6 +137,22 @@ export interface Database {
           media_type?: string | null
           ipfs_hash?: string | null
           status?: WorkStatus
+          primary_material?: string | null
+          creation_date?: string | null
+          is_published?: boolean
+          asset_links?: string[] | null
+          originality_type?: OriginalityDeclaration | null
+          original_work_reference?: string | null
+          plagiarism_scan_result?: Json | null
+          plagiarism_scan_date?: string | null
+          context_data?: Json | null
+          context_summary?: string | null
+          context_signed_at?: string | null
+          payment_status?: string | null
+          payment_intent_id?: string | null
+          payment_completed_at?: string | null
+          mms_sent_at?: string | null
+          mms_delivery_status?: string | null
         }
         Update: {
           title?: string
@@ -85,6 +161,22 @@ export interface Database {
           technique?: string | null
           media_url?: string | null
           status?: WorkStatus
+          primary_material?: string | null
+          creation_date?: string | null
+          is_published?: boolean
+          asset_links?: string[] | null
+          originality_type?: OriginalityDeclaration | null
+          original_work_reference?: string | null
+          plagiarism_scan_result?: Json | null
+          plagiarism_scan_date?: string | null
+          context_data?: Json | null
+          context_summary?: string | null
+          context_signed_at?: string | null
+          payment_status?: string | null
+          payment_intent_id?: string | null
+          payment_completed_at?: string | null
+          mms_sent_at?: string | null
+          mms_delivery_status?: string | null
         }
       }
       work_commerce: {
@@ -93,7 +185,7 @@ export interface Database {
           work_id: string
           initial_price: number | null
           currency: string
-          royalty_type: RoyaltyType
+          royalty_type: RoyaltyType | null
           royalty_value: number
           is_for_sale: boolean
           created_at: string
@@ -103,13 +195,13 @@ export interface Database {
           work_id: string
           initial_price?: number | null
           currency?: string
-          royalty_type?: RoyaltyType
+          royalty_type?: RoyaltyType | null
           royalty_value?: number
           is_for_sale?: boolean
         }
         Update: {
           initial_price?: number | null
-          royalty_type?: RoyaltyType
+          royalty_type?: RoyaltyType | null
           royalty_value?: number
           is_for_sale?: boolean
         }
@@ -220,6 +312,134 @@ export interface Database {
           is_read?: boolean
         }
       }
+      // New v2 tables
+      tbt_payments: {
+        Row: {
+          id: string
+          work_id: string
+          user_id: string
+          amount: number
+          currency: string
+          stripe_payment_intent_id: string | null
+          stripe_checkout_session_id: string | null
+          status: string
+          created_at: string
+          completed_at: string | null
+          metadata: Json | null
+        }
+        Insert: {
+          work_id: string
+          user_id: string
+          amount?: number
+          currency?: string
+          stripe_payment_intent_id?: string | null
+          stripe_checkout_session_id?: string | null
+          status?: string
+          metadata?: Json | null
+        }
+        Update: {
+          status?: string
+          completed_at?: string | null
+          stripe_payment_intent_id?: string | null
+        }
+      }
+      plagiarism_checks: {
+        Row: {
+          id: string
+          work_id: string
+          scan_type: string | null
+          scan_result: Json | null
+          similarity_score: number | null
+          matches_found: number
+          flagged_urls: string[] | null
+          user_declaration: OriginalityDeclaration | null
+          declaration_note: string | null
+          scanned_at: string
+        }
+        Insert: {
+          work_id: string
+          scan_type?: string | null
+          scan_result?: Json | null
+          similarity_score?: number | null
+          matches_found?: number
+          flagged_urls?: string[] | null
+          user_declaration?: OriginalityDeclaration | null
+          declaration_note?: string | null
+        }
+        Update: {
+          scan_result?: Json | null
+          similarity_score?: number | null
+          user_declaration?: OriginalityDeclaration | null
+          declaration_note?: string | null
+        }
+      }
+      context_snapshots: {
+        Row: {
+          id: string
+          work_id: string
+          gps_coordinates: Json | null
+          location_name: string | null
+          country: string | null
+          city: string | null
+          weather_data: Json | null
+          top_headlines: string[] | null
+          market_data: Json | null
+          ai_summary: string | null
+          ai_model: string | null
+          user_edited_summary: string | null
+          signed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          work_id: string
+          gps_coordinates?: Json | null
+          location_name?: string | null
+          country?: string | null
+          city?: string | null
+          weather_data?: Json | null
+          top_headlines?: string[] | null
+          market_data?: Json | null
+          ai_summary?: string | null
+          ai_model?: string | null
+          user_edited_summary?: string | null
+          signed_at?: string | null
+        }
+        Update: {
+          user_edited_summary?: string | null
+          signed_at?: string | null
+        }
+      }
+      mms_deliveries: {
+        Row: {
+          id: string
+          work_id: string
+          user_id: string
+          phone_number: string
+          twilio_message_sid: string | null
+          status: string
+          certificate_url: string | null
+          gif_url: string | null
+          sent_at: string | null
+          delivered_at: string | null
+          error_message: string | null
+          created_at: string
+        }
+        Insert: {
+          work_id: string
+          user_id: string
+          phone_number: string
+          twilio_message_sid?: string | null
+          status?: string
+          certificate_url?: string | null
+          gif_url?: string | null
+        }
+        Update: {
+          status?: string
+          sent_at?: string | null
+          delivered_at?: string | null
+          error_message?: string | null
+        }
+      }
     }
   }
 }
@@ -232,6 +452,10 @@ export interface WorkContext extends Database['public']['Tables']['work_context'
 export interface Transfer extends Database['public']['Tables']['transfers']['Row'] {}
 export interface Certificate extends Database['public']['Tables']['certificates']['Row'] {}
 export interface Alert extends Database['public']['Tables']['alerts']['Row'] {}
+export interface TBTPayment extends Database['public']['Tables']['tbt_payments']['Row'] {}
+export interface PlagiarismCheck extends Database['public']['Tables']['plagiarism_checks']['Row'] {}
+export interface ContextSnapshot extends Database['public']['Tables']['context_snapshots']['Row'] {}
+export interface MMSDelivery extends Database['public']['Tables']['mms_deliveries']['Row'] {}
 
 // Tipo para obra con relaciones
 export interface WorkWithRelations extends Work {
@@ -239,6 +463,10 @@ export interface WorkWithRelations extends Work {
   current_owner?: Profile
   work_commerce?: WorkCommerce
   work_context?: WorkContext
+  context_snapshot?: ContextSnapshot
   certificates?: Certificate[]
   transfers?: Transfer[]
+  payments?: TBTPayment[]
+  plagiarism_checks?: PlagiarismCheck[]
+  mms_deliveries?: MMSDelivery[]
 }
