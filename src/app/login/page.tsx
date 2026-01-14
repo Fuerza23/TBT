@@ -43,7 +43,7 @@ const COUNTRIES = [
 ]
 
 export default function LoginPage() {
-  const [method, setMethod] = useState<AuthMethod>('email')
+  const [method, setMethod] = useState<AuthMethod>('phone')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0]) // Colombia por defecto
@@ -205,18 +205,6 @@ export default function LoginPage() {
                 <div className="flex rounded-xl bg-tbt-bg p-1 mb-6">
                   <button
                     type="button"
-                    onClick={() => { setMethod('email'); setError('') }}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-medium transition-all ${
-                      method === 'email'
-                        ? 'bg-tbt-card text-tbt-text shadow-sm'
-                        : 'text-tbt-muted hover:text-tbt-text'
-                    }`}
-                  >
-                    <Mail className="w-4 h-4" />
-                    Email
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => { setMethod('phone'); setError('') }}
                     className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-medium transition-all ${
                       method === 'phone'
@@ -226,6 +214,18 @@ export default function LoginPage() {
                   >
                     <Phone className="w-4 h-4" />
                     Teléfono
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setMethod('email'); setError('') }}
+                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-medium transition-all ${
+                      method === 'email'
+                        ? 'bg-tbt-card text-tbt-text shadow-sm'
+                        : 'text-tbt-muted hover:text-tbt-text'
+                    }`}
+                  >
+                    <Mail className="w-4 h-4" />
+                    Email
                   </button>
                 </div>
 
