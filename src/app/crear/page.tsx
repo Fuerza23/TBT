@@ -23,7 +23,8 @@ import {
   Shield,
   CreditCard,
   Send,
-  Loader2
+  Loader2,
+  Calendar
 } from 'lucide-react'
 
 // Tipos
@@ -726,13 +727,18 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                 {/* Creation Date & Status */}
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="input-label">Fecha de Creación</label>
-                    <input
-                      type="date"
-                      value={workData.creationDate}
-                      onChange={(e) => updateWork({ creationDate: e.target.value })}
-                      className="input"
-                    />
+                    <label className="input-label flex items-center gap-2">
+                      <Calendar className="w-4 h-4" />
+                      Fecha de Creación
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="date"
+                        value={workData.creationDate}
+                        onChange={(e) => updateWork({ creationDate: e.target.value })}
+                        className="input cursor-pointer"
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="input-label">Estado</label>
