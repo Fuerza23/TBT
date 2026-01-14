@@ -79,11 +79,11 @@ export default function RegistroPage() {
 
     try {
       if (method === 'email') {
-        const { error } = await supabase.auth.signInWithOtp({
-          email,
-          options: {
-            shouldCreateUser: true,
-            emailRedirectTo: `${window.location.origin}/auth/callback`,
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          shouldCreateUser: true,
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
           },
         })
         if (error) throw error
@@ -93,9 +93,9 @@ export default function RegistroPage() {
           phone: fullPhone,
           options: {
             shouldCreateUser: true,
-          },
-        })
-        if (error) throw error
+        },
+      })
+      if (error) throw error
       }
       
       setStep('verify')
@@ -114,34 +114,34 @@ export default function RegistroPage() {
     try {
       if (method === 'email') {
         const types = ['signup', 'email', 'magiclink'] as const
-        let lastError: any = null
+      let lastError: any = null
 
-        for (const type of types) {
-          const { data, error } = await supabase.auth.verifyOtp({
-            email,
-            token: otp,
-            type,
-          })
+      for (const type of types) {
+        const { data, error } = await supabase.auth.verifyOtp({
+          email,
+          token: otp,
+          type,
+        })
 
-          if (!error && data.session) {
-            router.push('/dashboard')
-            router.refresh()
-            return
-          }
-
-          lastError = error
-          if (error && !error.message.includes('invalid') && !error.message.includes('Token')) {
-            break
-          }
+        if (!error && data.session) {
+          router.push('/dashboard')
+          router.refresh()
+          return
         }
 
-        if (lastError) {
-          if (lastError.message.includes('expired')) {
-            throw new Error('El código expiró. Solicita uno nuevo.')
-          } else if (lastError.message.includes('invalid') || lastError.message.includes('Token')) {
-            throw new Error('Código incorrecto. Verifica e intenta de nuevo.')
-          }
-          throw lastError
+        lastError = error
+        if (error && !error.message.includes('invalid') && !error.message.includes('Token')) {
+          break
+        }
+      }
+
+      if (lastError) {
+        if (lastError.message.includes('expired')) {
+          throw new Error('El código expiró. Solicita uno nuevo.')
+        } else if (lastError.message.includes('invalid') || lastError.message.includes('Token')) {
+          throw new Error('Código incorrecto. Verifica e intenta de nuevo.')
+        }
+        throw lastError
         }
       } else {
         const fullPhone = getFullPhoneNumber()
@@ -218,7 +218,7 @@ export default function RegistroPage() {
           </div>
 
           <div className="card animate-in-delay-2">
-
+            
             {step === 'contact' && (
               <form onSubmit={handleSendOTP}>
                 {/* Toggle Phone / Email */}
@@ -254,7 +254,7 @@ export default function RegistroPage() {
                     method === 'email' ? 'bg-tbt-primary/20' : 'bg-tbt-gold/20'
                   }`}>
                     {method === 'email' ? (
-                      <Mail className="w-6 h-6 text-tbt-primary" />
+                    <Mail className="w-6 h-6 text-tbt-primary" />
                     ) : (
                       <Phone className="w-6 h-6 text-tbt-gold" />
                     )}
@@ -269,21 +269,21 @@ export default function RegistroPage() {
                 </div>
 
                 {method === 'email' ? (
-                  <div>
-                    <label htmlFor="email" className="input-label">
-                      Correo electrónico
-                    </label>
-                    <input
-                      id="email"
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="tu@email.com"
-                      className="input"
-                      required
-                      autoFocus
-                    />
-                  </div>
+                <div>
+                  <label htmlFor="email" className="input-label">
+                    Correo electrónico
+                  </label>
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="tu@email.com"
+                    className="input"
+                    required
+                    autoFocus
+                  />
+                </div>
                 ) : (
                   <div>
                     <label htmlFor="phone" className="input-label">

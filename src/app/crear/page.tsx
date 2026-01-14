@@ -797,6 +797,43 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                     className="input min-h-[120px] resize-none"
                   />
                 </div>
+
+                {/* Image Upload */}
+                <div>
+                  <label className="input-label">Imagen Principal</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    id="media-upload"
+                  />
+                  
+                  {workData.mediaPreview ? (
+                    <div className="relative rounded-xl overflow-hidden">
+                      <img 
+                        src={workData.mediaPreview} 
+                        alt="Preview" 
+                        className="w-full aspect-[4/3] object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => updateWork({ mediaFile: null, mediaPreview: '' })}
+                        className="absolute top-3 right-3 w-8 h-8 rounded-full bg-tbt-bg/80 flex items-center justify-center"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label
+                      htmlFor="media-upload"
+                      className="w-full aspect-[4/3] border-2 border-dashed border-tbt-border rounded-xl hover:border-tbt-primary/50 transition-colors flex flex-col items-center justify-center gap-3 cursor-pointer"
+                    >
+                      <Upload className="w-8 h-8 text-tbt-muted" />
+                      <span className="text-tbt-muted">Sube una imagen</span>
+                    </label>
+                  )}
+                </div>
               </div>
             )}
 
@@ -1142,102 +1179,66 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
               <div className="space-y-6">
                 <div className="text-center mb-6">
                   <h2 className="text-xl font-semibold text-tbt-text">Entrega Final</h2>
-                  <p className="text-sm text-tbt-muted">Sube la imagen y registra tu TBT</p>
+                  <p className="text-sm text-tbt-muted">Tu TBT está listo para ser registrado</p>
                 </div>
 
-                {/* Image Upload */}
-                <div>
-                  <label className="input-label">Imagen Principal de la Obra *</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                    id="media-upload"
-                  />
-                  
-                  {workData.mediaPreview ? (
-                    <div className="relative rounded-xl overflow-hidden">
-                      <img 
-                        src={workData.mediaPreview} 
-                        alt="Preview" 
-                        className="w-full aspect-[4/3] object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => updateWork({ mediaFile: null, mediaPreview: '' })}
-                        className="absolute top-3 right-3 w-8 h-8 rounded-full bg-tbt-bg/80 flex items-center justify-center hover:bg-tbt-primary/80 transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <label
-                      htmlFor="media-upload"
-                      className="w-full aspect-[4/3] border-2 border-dashed border-tbt-border rounded-xl hover:border-tbt-primary/50 transition-colors flex flex-col items-center justify-center gap-3 cursor-pointer bg-tbt-bg/50"
-                    >
-                      <Upload className="w-10 h-10 text-tbt-muted" />
-                      <span className="text-tbt-muted">Sube la imagen de tu obra</span>
-                      <span className="text-xs text-tbt-muted/70">JPG, PNG, GIF (máx 10MB)</span>
-                    </label>
-                  )}
-                </div>
+                <div className="text-center py-8">
+                  <div className="w-20 h-20 rounded-full bg-tbt-success/20 flex items-center justify-center mx-auto mb-6">
+                    <Send className="w-10 h-10 text-tbt-success" />
+                  </div>
 
-                {/* Summary */}
-                <div className="bg-tbt-bg rounded-xl p-4 space-y-3">
-                  <h3 className="font-medium text-tbt-text mb-3">Resumen del TBT</h3>
-                  <div className="flex justify-between">
-                    <span className="text-tbt-muted">Obra:</span>
-                    <span className="text-tbt-text font-medium">{workData.title}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-tbt-muted">Creador:</span>
-                    <span className="text-tbt-text">{creatorData.publicAlias}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-tbt-muted">Categoría:</span>
-                    <span className="text-tbt-text">{workData.category}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-tbt-muted">Precio:</span>
-                    <span className="text-tbt-text">${commProData.marketPrice} {commProData.currency}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-tbt-muted">Regalía:</span>
-                    <span className="text-tbt-gold">
-                      {commProData.royaltyType === 'none' 
-                        ? 'Sin regalía' 
-                        : commProData.royaltyType === 'percentage'
-                          ? `${commProData.royaltyValue}%`
-                          : `$${commProData.royaltyValue} ${commProData.currency}`
-                      }
-                    </span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleFinalSubmit}
-                  disabled={isLoading || !workData.mediaFile}
-                  className="btn-primary w-full text-lg"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Registrando TBT...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-5 h-5" />
-                      Registrar TBT
-                    </>
-                  )}
-                </button>
-
-                {!workData.mediaFile && (
-                  <p className="text-center text-sm text-tbt-warning">
-                    Sube una imagen para poder registrar tu TBT
+                  <h3 className="text-2xl font-bold text-tbt-text mb-2">
+                    ¡Todo listo!
+                  </h3>
+                  <p className="text-tbt-muted mb-8">
+                    Click en "Registrar TBT" para finalizar
                   </p>
-                )}
+
+                  {/* Summary */}
+                  <div className="bg-tbt-bg rounded-xl p-4 mb-6 text-left space-y-3">
+                    <div className="flex justify-between">
+                      <span className="text-tbt-muted">Obra:</span>
+                      <span className="text-tbt-text font-medium">{workData.title}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-tbt-muted">Creador:</span>
+                      <span className="text-tbt-text">{creatorData.publicAlias}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-tbt-muted">Precio:</span>
+                      <span className="text-tbt-text">${commProData.marketPrice} {commProData.currency}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-tbt-muted">Regalía:</span>
+                      <span className="text-tbt-gold">
+                        {commProData.royaltyType === 'none' 
+                          ? 'Sin regalía' 
+                          : commProData.royaltyType === 'percentage'
+                            ? `${commProData.royaltyValue}%`
+                            : `$${commProData.royaltyValue} ${commProData.currency}`
+                        }
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleFinalSubmit}
+                    disabled={isLoading}
+                    className="btn-primary text-lg px-8"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Registrando...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-5 h-5" />
+                        Registrar TBT
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             )}
 
