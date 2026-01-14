@@ -1,8 +1,14 @@
+'use client'
+
+import { useState } from 'react'
 import Link from 'next/link'
 import { Logo } from '@/components/ui/Logo'
+import { AuthModal } from '@/components/AuthModal'
 import { ArrowRight } from 'lucide-react'
 
 export default function HomePage() {
+  const [isModalOpen, setIsModalOpen] = useState(false)
+
   return (
     <main className="min-h-screen flex items-center justify-center bg-tbt-bg">
       {/* Fondo con gradiente sutil */}
@@ -18,13 +24,13 @@ export default function HomePage() {
 
         {/* Botón principal */}
         <div className="animate-in-delay-1">
-          <Link 
-            href="/crear" 
+          <button 
+            onClick={() => setIsModalOpen(true)}
             className="btn-primary text-xl px-12 py-5 shadow-2xl shadow-tbt-primary/25 hover:shadow-tbt-primary/40 transition-all hover:scale-105"
           >
             Crear mi primer TBT
             <ArrowRight className="w-6 h-6" />
-          </Link>
+          </button>
         </div>
 
         {/* Link secundario */}
@@ -37,6 +43,12 @@ export default function HomePage() {
           </Link>
         </div>
       </div>
+
+      {/* Auth Modal */}
+      <AuthModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+      />
     </main>
   )
 }
