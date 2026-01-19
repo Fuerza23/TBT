@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@/lib/supabase'
 import { 
@@ -20,7 +20,17 @@ import {
   CreditCard,
   Send,
   Loader2,
-  Calendar
+  Calendar,
+  Camera,
+  Mic,
+  Video,
+  Instagram,
+  Facebook,
+  Youtube,
+  Linkedin,
+  Globe,
+  Plus,
+  Link2
 } from 'lucide-react'
 
 // Tipos
@@ -30,7 +40,7 @@ type OriginalityType = 'original' | 'derivative' | 'authorized_edition'
 
 const PHASES = [
   { id: 2, name: 'Creador', icon: '👤' },
-  { id: 3, name: 'Obra', icon: '🎨' },
+  { id: 3, name: 'La Obra', icon: '🎨' },
   { id: 4, name: 'CommPro', icon: '🛡️' },
   { id: 5, name: 'Contexto', icon: '🌍' },
   { id: 6, name: 'Pago', icon: '💳' },
@@ -55,6 +65,16 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [user, setUser] = useState<any>(null)
+  
+  // Recording state
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordingTime, setRecordingTime] = useState(0)
+  const [recordingType, setRecordingType] = useState<'audio' | 'video'>('video')
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const recordingChunksRef = useRef<Blob[]>([])
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
+  
   const router = useRouter()
   const supabase = createBrowserClient()
 
@@ -71,7 +91,13 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
     socialLinkedin: '',
     socialWebsite: '',
     socialInstagram: '',
+    socialFacebook: '',
+    socialYoutube: '',
+    socialOther: '',
+    showOtherSocial: false,
     aboutCreator: '',
+    profilePhoto: null as File | null,
+    profilePhotoPreview: '',
   })
 
   // Form State - Phase 3: Work
@@ -80,11 +106,15 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
     category: '',
     primaryMaterial: '',
     creationDate: '',
+    workStatus: 'publicado' as 'publicado' | 'privado',
     isPublished: true,
     assetLinks: ['', '', '', '', ''],
     aboutWork: '',
     mediaFile: null as File | null,
     mediaPreview: '',
+    audioVideoFile: null as File | null,
+    audioVideoPreview: '',
+    audioVideoType: '' as 'audio' | 'video' | '',
   })
 
   // Form State - Phase 4: CommPro
@@ -217,6 +247,81 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
       })
     }
     reader.readAsDataURL(file)
+  }
+
+  // Recording functions
+  const startRecording = async (type: 'audio' | 'video') => {
+    try {
+      setRecordingType(type)
+      recordingChunksRef.current = []
+      
+      const constraints = type === 'video' 
+        ? { video: true, audio: true }
+        : { audio: true }
+      
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      mediaStreamRef.current = stream
+      
+      const mimeType = type === 'video' 
+        ? 'video/webm;codecs=vp8,opus'
+        : 'audio/webm;codecs=opus'
+      
+      const mediaRecorder = new MediaRecorder(stream, { mimeType })
+      mediaRecorderRef.current = mediaRecorder
+      
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          recordingChunksRef.current.push(e.data)
+        }
+      }
+      
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordingChunksRef.current, { type: mimeType })
+        const file = new File([blob], `recording.${type === 'video' ? 'webm' : 'webm'}`, { type: mimeType })
+        const url = URL.createObjectURL(blob)
+        
+        updateWork({
+          audioVideoFile: file,
+          audioVideoPreview: url,
+          audioVideoType: type
+        })
+        
+        // Clean up stream
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach(track => track.stop())
+        }
+      }
+      
+      mediaRecorder.start(100)
+      setIsRecording(true)
+      setRecordingTime(0)
+      
+      // Start timer (max 23 seconds)
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime(prev => {
+          if (prev >= 23) {
+            stopRecording()
+            return 23
+          }
+          return prev + 1
+        })
+      }, 1000)
+      
+    } catch (err) {
+      console.error('Error accessing media devices:', err)
+      setError('No se pudo acceder a la cámara/micrófono. Verifica los permisos.')
+    }
+  }
+  
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+    }
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current)
+    }
+    setIsRecording(false)
+    setRecordingTime(0)
   }
 
   const nextPhase = () => {
@@ -401,6 +506,34 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
           version: 1,
         })
 
+      // Send SMS notification if user has phone number
+      const userPhone = user.phone
+      if (userPhone) {
+        try {
+          const smsResponse = await fetch('/api/send-sms', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+            },
+            body: JSON.stringify({
+              phoneNumber: userPhone,
+              workId: work.id,
+              userId: user.id,
+            }),
+          })
+          
+          if (!smsResponse.ok) {
+            console.warn('SMS not sent:', await smsResponse.text())
+          } else {
+            console.log('SMS sent successfully')
+          }
+        } catch (smsError) {
+          console.warn('Error sending SMS notification:', smsError)
+          // Don't block the flow if SMS fails
+        }
+      }
+
       onClose()
       router.push(`/work/${work.tbt_id}?success=true`)
       router.refresh()
@@ -439,32 +572,21 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
           </button>
         </div>
 
-        {/* Phase Progress */}
-        <div className="flex items-center justify-center gap-1 px-6 py-4 border-b border-tbt-border overflow-x-auto">
+        {/* Phase Progress - Text only, current in red, others in gray */}
+        <div className="flex items-center justify-center gap-4 px-6 py-4 border-b border-tbt-border overflow-x-auto">
           {PHASES.map((p, i) => (
             <div key={p.id} className="flex items-center">
-              <div className={`flex flex-col items-center min-w-[50px] ${
-                phase === p.id ? 'scale-110' : ''
+              <span className={`transition-all ${
+                phase === p.id 
+                  ? 'text-lg font-bold text-red-500' 
+                  : phase > p.id
+                    ? 'text-sm text-tbt-success font-medium'
+                    : 'text-sm text-gray-400'
               }`}>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm transition-all ${
-                  phase === p.id 
-                    ? 'bg-gradient-accent text-white shadow-lg shadow-tbt-primary/25' 
-                    : phase > p.id
-                      ? 'bg-tbt-success text-white'
-                      : 'bg-tbt-border text-tbt-muted'
-                }`}>
-                  {phase > p.id ? <Check className="w-4 h-4" /> : p.icon}
-                </div>
-                <span className={`text-[9px] mt-1 ${
-                  phase === p.id ? 'text-tbt-primary font-medium' : 'text-tbt-muted'
-                }`}>
-                  {p.name}
-                </span>
-              </div>
+                {p.name}
+              </span>
               {i < PHASES.length - 1 && (
-                <div className={`w-4 h-0.5 mx-1 ${
-                  phase > p.id ? 'bg-tbt-success' : 'bg-tbt-border'
-                }`} />
+                <span className="mx-3 text-gray-300">•</span>
               )}
             </div>
           ))}
@@ -475,8 +597,51 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
           {/* Phase 2: Creator */}
           {phase === 2 && (
             <div className="space-y-4">
-              <div className="text-center mb-4">
-                <h3 className="text-lg font-semibold text-tbt-text">Identidad del Creador</h3>
+              <div className="text-left mb-4">
+                <h3 className="text-xl font-semibold text-tbt-text">Identidad del Creador</h3>
+              </div>
+
+              {/* Profile Photo Upload */}
+              <div className="flex justify-center mb-4">
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) {
+                        updateCreator({
+                          profilePhoto: file,
+                          profilePhotoPreview: URL.createObjectURL(file)
+                        })
+                      }
+                    }}
+                    className="hidden"
+                    id="profile-photo-upload"
+                  />
+                  <label
+                    htmlFor="profile-photo-upload"
+                    className="cursor-pointer block"
+                  >
+                    {creatorData.profilePhotoPreview ? (
+                      <div className="relative w-24 h-24 rounded-full overflow-hidden border-4 border-tbt-primary/30 hover:border-tbt-primary transition-colors">
+                        <img
+                          src={creatorData.profilePhotoPreview}
+                          alt="Profile"
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                          <Camera className="w-6 h-6 text-white" />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="w-24 h-24 rounded-full bg-tbt-border/50 border-2 border-dashed border-tbt-border flex flex-col items-center justify-center hover:border-tbt-primary/50 transition-colors">
+                        <Camera className="w-6 h-6 text-tbt-muted" />
+                        <span className="text-[10px] text-tbt-muted mt-1">Foto</span>
+                      </div>
+                    )}
+                  </label>
+                </div>
               </div>
 
               <div>
@@ -582,14 +747,82 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                 />
               </div>
 
-              <div className="grid sm:grid-cols-2 gap-3">
-                <input
-                  type="url"
-                  value={creatorData.socialLinkedin}
-                  onChange={(e) => updateCreator({ socialLinkedin: e.target.value })}
-                  placeholder="LinkedIn URL"
-                  className="input"
-                />
+              {/* Redes Sociales */}
+              <div className="pt-4 border-t border-tbt-border/50">
+                <label className="input-label mb-3">Redes Sociales</label>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Instagram className="w-5 h-5 text-pink-500" />
+                    <input
+                      type="url"
+                      value={creatorData.socialInstagram}
+                      onChange={(e) => updateCreator({ socialInstagram: e.target.value })}
+                      placeholder="Instagram URL"
+                      className="input flex-1"
+                    />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Facebook className="w-5 h-5 text-blue-600" />
+                    <input
+                      type="url"
+                      value={creatorData.socialFacebook}
+                      onChange={(e) => updateCreator({ socialFacebook: e.target.value })}
+                      placeholder="Facebook URL"
+                      className="input flex-1"
+                    />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Youtube className="w-5 h-5 text-red-600" />
+                    <input
+                      type="url"
+                      value={creatorData.socialYoutube}
+                      onChange={(e) => updateCreator({ socialYoutube: e.target.value })}
+                      placeholder="YouTube URL"
+                      className="input flex-1"
+                    />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Linkedin className="w-5 h-5 text-blue-500" />
+                    <input
+                      type="url"
+                      value={creatorData.socialLinkedin}
+                      onChange={(e) => updateCreator({ socialLinkedin: e.target.value })}
+                      placeholder="LinkedIn URL"
+                      className="input flex-1"
+                    />
+                  </div>
+                  
+                  {/* Otros */}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => updateCreator({ showOtherSocial: !creatorData.showOtherSocial })}
+                      className={`flex items-center gap-2 text-sm transition-colors ${
+                        creatorData.showOtherSocial ? 'text-tbt-primary' : 'text-tbt-muted hover:text-tbt-text'
+                      }`}
+                    >
+                      <Plus className="w-4 h-4" />
+                      Otros
+                    </button>
+                    {creatorData.showOtherSocial && (
+                      <div className="mt-2 flex items-center gap-3">
+                        <Link2 className="w-5 h-5 text-tbt-muted" />
+                        <input
+                          type="url"
+                          value={creatorData.socialOther}
+                          onChange={(e) => updateCreator({ socialOther: e.target.value })}
+                          placeholder="Otra red social o website"
+                          className="input flex-1"
+                          autoFocus
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="input-label">Website</label>
                 <input
                   type="url"
                   value={creatorData.socialWebsite}
@@ -611,11 +844,11 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
             </div>
           )}
 
-          {/* Phase 3: Work - Simplified for modal */}
+          {/* Phase 3: La Obra */}
           {phase === 3 && (
             <div className="space-y-4">
-              <div className="text-center mb-4">
-                <h3 className="text-lg font-semibold text-tbt-text">Metadatos de la Obra</h3>
+              <div className="text-left mb-4">
+                <h3 className="text-xl font-semibold text-tbt-text">La Obra</h3>
               </div>
 
               <div>
@@ -661,38 +894,46 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                     <Calendar className="w-4 h-4" />
                     Fecha de Creación
                   </label>
-                  <input
-                    type="date"
-                    value={workData.creationDate}
-                    onChange={(e) => updateWork({ creationDate: e.target.value })}
-                    className="input cursor-pointer"
-                  />
+                  <div className="relative">
+                    <input
+                      type="date"
+                      value={workData.creationDate}
+                      onChange={(e) => updateWork({ creationDate: e.target.value })}
+                      className="input cursor-pointer w-full [&::-webkit-calendar-picker-indicator]:opacity-100 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:p-1 [&::-webkit-calendar-picker-indicator]:rounded [&::-webkit-calendar-picker-indicator]:hover:bg-tbt-primary/20"
+                      onClick={(e) => (e.target as HTMLInputElement).showPicker?.()}
+                    />
+                  </div>
                 </div>
                 <div>
-                  <label className="input-label">Estado</label>
-                  <div className="flex gap-2 mt-2">
-                    <button
-                      type="button"
-                      onClick={() => updateWork({ isPublished: true })}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                        workData.isPublished 
-                          ? 'bg-tbt-success/20 text-tbt-success border border-tbt-success/30' 
-                          : 'bg-tbt-border text-tbt-muted'
-                      }`}
-                    >
-                      Publicado
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => updateWork({ isPublished: false })}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                        !workData.isPublished 
-                          ? 'bg-tbt-warning/20 text-tbt-warning border border-tbt-warning/30' 
-                          : 'bg-tbt-border text-tbt-muted'
-                      }`}
-                    >
-                      Privado
-                    </button>
+                  <label className="input-label">Estado de la Obra</label>
+                  <div className="space-y-2 mt-2">
+                    {[
+                      { value: 'publicado', label: 'Publicado' },
+                      { value: 'privado', label: 'Privado' },
+                    ].map(({ value, label }) => (
+                      <label key={value} className="flex items-center gap-3 cursor-pointer group">
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                          workData.workStatus === value 
+                            ? 'border-tbt-primary bg-tbt-primary' 
+                            : 'border-tbt-border group-hover:border-tbt-primary/50'
+                        }`}>
+                          {workData.workStatus === value && (
+                            <div className="w-2 h-2 rounded-full bg-white" />
+                          )}
+                        </div>
+                        <span className={`text-sm ${
+                          workData.workStatus === value ? 'text-tbt-text font-medium' : 'text-tbt-muted'
+                        }`}>{label}</span>
+                        <input
+                          type="radio"
+                          name="workStatus"
+                          value={value}
+                          checked={workData.workStatus === value}
+                          onChange={(e) => updateWork({ workStatus: e.target.value as typeof workData.workStatus })}
+                          className="sr-only"
+                        />
+                      </label>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -730,39 +971,142 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                 />
               </div>
 
-              <div>
-                <label className="input-label">Imagen Principal</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                  id="media-upload"
-                />
-                {workData.mediaPreview ? (
-                  <div className="relative rounded-xl overflow-hidden">
-                    <img 
-                      src={workData.mediaPreview} 
-                      alt="Preview" 
-                      className="w-full aspect-[4/3] object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => updateWork({ mediaFile: null, mediaPreview: '' })}
-                      className="absolute top-3 right-3 w-8 h-8 rounded-full bg-tbt-bg/80 flex items-center justify-center"
+              {/* Media Section - Clean Card Design */}
+              <div className="bg-tbt-bg/30 rounded-2xl p-4 border border-tbt-border/30">
+                {/* Audio/Video */}
+                <div className="mb-4">
+                  <p className="text-sm text-tbt-muted mb-3">Cuenta sobre tu obra</p>
+                  
+                  <input
+                    type="file"
+                    accept="audio/*,video/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) {
+                        const isVideo = file.type.startsWith('video/')
+                        updateWork({
+                          audioVideoFile: file,
+                          audioVideoPreview: URL.createObjectURL(file),
+                          audioVideoType: isVideo ? 'video' : 'audio'
+                        })
+                      }
+                    }}
+                    className="hidden"
+                    id="audio-video-upload"
+                  />
+                  
+                  {workData.audioVideoPreview ? (
+                    <div className="relative">
+                      {workData.audioVideoType === 'video' ? (
+                        <video 
+                          src={workData.audioVideoPreview} 
+                          controls 
+                          className="w-full rounded-lg max-h-28"
+                        />
+                      ) : (
+                        <audio 
+                          src={workData.audioVideoPreview} 
+                          controls 
+                          className="w-full"
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => updateWork({ 
+                          audioVideoFile: null, 
+                          audioVideoPreview: '', 
+                          audioVideoType: '' 
+                        })}
+                        className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : isRecording ? (
+                    <div className="text-center py-4">
+                      <div className="inline-flex items-center gap-2 px-4 py-2 bg-red-500/10 rounded-full mb-3">
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                        <span className="text-red-500 text-sm font-medium">{recordingTime}s</span>
+                      </div>
+                      <div className="w-full bg-tbt-border/50 rounded-full h-1 mb-3">
+                        <div 
+                          className="bg-red-500 h-1 rounded-full transition-all" 
+                          style={{ width: `${(recordingTime / 23) * 100}%` }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={stopRecording}
+                        className="text-sm text-red-500 hover:text-red-400 transition-colors"
+                      >
+                        ⏹ Detener
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <label
+                        htmlFor="audio-video-upload"
+                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-tbt-border/30 rounded-xl hover:bg-tbt-border/50 transition-colors cursor-pointer"
+                      >
+                        <Upload className="w-4 h-4 text-tbt-muted" />
+                        <span className="text-sm text-tbt-muted">Archivo</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => startRecording('video')}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-tbt-border/30 rounded-xl hover:bg-red-500/10 hover:text-red-400 transition-colors"
+                      >
+                        <Video className="w-4 h-4" />
+                        <span className="text-sm">Video</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => startRecording('audio')}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-tbt-border/30 rounded-xl hover:bg-tbt-primary/10 transition-colors"
+                      >
+                        <Mic className="w-4 h-4" />
+                        <span className="text-sm">Audio</span>
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-xs text-tbt-muted/60 mt-2 text-center">máx 23 seg</p>
+                </div>
+
+                {/* Image - Centered Below */}
+                <div className="flex flex-col pt-3 border-t border-tbt-border/20">
+                  <p className="text-sm text-tbt-muted mb-3">Imagen</p>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    id="media-upload"
+                  />
+                  {workData.mediaPreview ? (
+                    <div className="relative w-full">
+                      <img 
+                        src={workData.mediaPreview} 
+                        alt="Preview" 
+                        className="w-full max-w-md mx-auto aspect-[4/3] rounded-xl object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => updateWork({ mediaFile: null, mediaPreview: '' })}
+                        className="absolute top-3 right-3 w-8 h-8 rounded-full bg-tbt-bg/80 backdrop-blur-sm flex items-center justify-center hover:bg-red-500 transition-colors"
+                      >
+                        <X className="w-4 h-4 text-tbt-text" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label
+                      htmlFor="media-upload"
+                      className="w-full max-w-md mx-auto aspect-[4/3] bg-tbt-border/30 rounded-xl hover:bg-tbt-border/50 transition-colors flex flex-col items-center justify-center cursor-pointer border-2 border-dashed border-tbt-border"
                     >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <label
-                    htmlFor="media-upload"
-                    className="w-full aspect-[4/3] border-2 border-dashed border-tbt-border rounded-xl hover:border-tbt-primary/50 transition-colors flex flex-col items-center justify-center gap-3 cursor-pointer"
-                  >
-                    <Upload className="w-8 h-8 text-tbt-muted" />
-                    <span className="text-tbt-muted">Sube una imagen</span>
-                  </label>
-                )}
+                      <Camera className="w-8 h-8 text-tbt-muted mb-2" />
+                      <span className="text-sm text-tbt-muted">Sube una imagen</span>
+                    </label>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -770,8 +1114,8 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
           {/* Phase 4: CommPro - Simplified */}
           {phase === 4 && (
             <div className="space-y-4">
-              <div className="text-center mb-4">
-                <h3 className="text-lg font-semibold text-tbt-text">CommPro</h3>
+              <div className="text-left mb-4">
+                <h3 className="text-xl font-semibold text-tbt-text">CommPro</h3>
               </div>
 
               <div className="p-4 rounded-xl bg-tbt-bg">
@@ -889,8 +1233,8 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
           {/* Phase 5: Context - Simplified */}
           {phase === 5 && (
             <div className="space-y-4">
-              <div className="text-center mb-4">
-                <h3 className="text-lg font-semibold text-tbt-text">Context Engine</h3>
+              <div className="text-left mb-4">
+                <h3 className="text-xl font-semibold text-tbt-text">Context Engine</h3>
               </div>
 
               {!contextData.aiSummary ? (
@@ -961,8 +1305,8 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
           {/* Phase 6: Payment */}
           {phase === 6 && (
             <div className="space-y-4">
-              <div className="text-center mb-4">
-                <h3 className="text-lg font-semibold text-tbt-text">Pago TBT</h3>
+              <div className="text-left mb-4">
+                <h3 className="text-xl font-semibold text-tbt-text">Pago TBT</h3>
               </div>
 
               <div className="text-center py-6">
@@ -1003,8 +1347,8 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
           {/* Phase 7: Delivery */}
           {phase === 7 && (
             <div className="space-y-4">
-              <div className="text-center mb-4">
-                <h3 className="text-lg font-semibold text-tbt-text">Entrega Final</h3>
+              <div className="text-left mb-4">
+                <h3 className="text-xl font-semibold text-tbt-text">Entrega Final</h3>
               </div>
 
               <div className="text-center py-6">

@@ -21,13 +21,13 @@ export default function HomePage() {
       {/* Fondo con gradiente sutil */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-radial from-tbt-primary/5 via-transparent to-transparent rounded-full" />
-      </div>
+              </div>
 
       <div className="relative z-10 text-center px-4">
         {/* Logo */}
         <div className="mb-12 animate-in">
           <Logo size="lg" />
-        </div>
+              </div>
 
         {/* Botón principal */}
         <div className="animate-in-delay-1">
@@ -38,7 +38,7 @@ export default function HomePage() {
             Crear mi primer TBT
             <ArrowRight className="w-6 h-6" />
           </button>
-        </div>
+          </div>
 
         {/* Link secundario */}
         <div className="mt-8 animate-in-delay-2">
@@ -48,8 +48,8 @@ export default function HomePage() {
           >
             ¿Ya tienes un TBT? Verificar →
           </Link>
-        </div>
-      </div>
+                    </div>
+                  </div>
 
       {/* Auth Modal */}
       <AuthModal 
@@ -63,6 +63,6 @@ export default function HomePage() {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
       />
-    </main>
+      </main>
   )
 }

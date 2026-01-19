@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@/lib/supabase'
-import { Mail, Phone, ArrowRight, AlertCircle, Check, ChevronDown, X } from 'lucide-react'
+import { ArrowRight, AlertCircle, Check, ChevronDown, X } from 'lucide-react'
+import Image from 'next/image'
 
 // Lista de países con códigos y banderas
 const COUNTRIES = [
@@ -38,28 +39,30 @@ const COUNTRIES = [
 ]
 
 type Step = 'contact' | 'verify'
-type Method = 'phone' | 'email'
 
 interface AuthModalProps {
   isOpen: boolean
   onClose: () => void
-  onAuthSuccess?: () => void // Callback cuando el usuario se registra exitosamente
+  onAuthSuccess?: () => void
 }
 
 export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
   const [step, setStep] = useState<Step>('contact')
-  const [method, setMethod] = useState<Method>('phone')
-  const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0])
   const [showCountryDropdown, setShowCountryDropdown] = useState(false)
   const [otp, setOtp] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [useDevMode, setUseDevMode] = useState(false) // Dev bypass
   const router = useRouter()
   const supabase = createBrowserClient()
   const dropdownRef = useRef<HTMLDivElement>(null)
   const modalRef = useRef<HTMLDivElement>(null)
+
+  // Development email for bypass
+  const DEV_EMAIL = 'hdgarzon3@gmail.com'
+  const DEV_PHONE = '1234567890' // When this number is entered, use email instead
 
   // Cerrar dropdown al hacer clic fuera
   useEffect(() => {
@@ -85,10 +88,10 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
   useEffect(() => {
     if (!isOpen) {
       setStep('contact')
-      setEmail('')
       setPhone('')
       setOtp('')
       setError('')
+      setUseDevMode(false)
     }
   }, [isOpen])
 
@@ -102,16 +105,22 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
     setIsLoading(true)
 
     try {
-      if (method === 'email') {
+      const cleanPhone = phone.replace(/\D/g, '')
+      
+      // Check if dev mode phone number
+      if (cleanPhone === DEV_PHONE) {
+        setUseDevMode(true)
+        // Use email OTP instead
         const { error } = await supabase.auth.signInWithOtp({
-          email,
+          email: DEV_EMAIL,
           options: {
             shouldCreateUser: true,
-            emailRedirectTo: `${window.location.origin}/auth/callback`,
           },
         })
         if (error) throw error
+        setStep('verify')
       } else {
+        setUseDevMode(false)
         const fullPhone = getFullPhoneNumber()
         const { error } = await supabase.auth.signInWithOtp({
           phone: fullPhone,
@@ -120,9 +129,8 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
           },
         })
         if (error) throw error
+        setStep('verify')
       }
-      
-      setStep('verify')
     } catch (err: any) {
       setError(err.message || 'Error al enviar el código')
     } finally {
@@ -136,67 +144,43 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
     setIsLoading(true)
 
     try {
-      if (method === 'email') {
-        const types = ['signup', 'email', 'magiclink'] as const
-        let lastError: any = null
-
-        for (const type of types) {
-          const { data, error } = await supabase.auth.verifyOtp({
-            email,
-            token: otp,
-            type,
-          })
-
-          if (!error && data.session) {
-            onClose()
-            if (onAuthSuccess) {
-              onAuthSuccess()
-            } else {
-              router.push('/crear')
-              router.refresh()
-            }
-            return
-          }
-
-          lastError = error
-          if (error && !error.message.includes('invalid') && !error.message.includes('Token')) {
-            break
-          }
-        }
-
-        if (lastError) {
-          if (lastError.message.includes('expired')) {
-            throw new Error('El código expiró. Solicita uno nuevo.')
-          } else if (lastError.message.includes('invalid') || lastError.message.includes('Token')) {
-            throw new Error('Código incorrecto. Verifica e intenta de nuevo.')
-          }
-          throw lastError
-        }
+      let verifyResult
+      
+      if (useDevMode) {
+        // Verify with email
+        verifyResult = await supabase.auth.verifyOtp({
+          email: DEV_EMAIL,
+          token: otp,
+          type: 'email',
+        })
       } else {
+        // Verify with phone
         const fullPhone = getFullPhoneNumber()
-        const { data, error } = await supabase.auth.verifyOtp({
+        verifyResult = await supabase.auth.verifyOtp({
           phone: fullPhone,
           token: otp,
           type: 'sms',
         })
+      }
 
-        if (error) {
-          if (error.message.includes('expired')) {
-            throw new Error('El código expiró. Solicita uno nuevo.')
-          } else if (error.message.includes('invalid') || error.message.includes('Token')) {
-            throw new Error('Código incorrecto. Verifica e intenta de nuevo.')
-          }
-          throw error
+      const { data, error } = verifyResult
+
+      if (error) {
+        if (error.message.includes('expired')) {
+          throw new Error('El código expiró. Solicita uno nuevo.')
+        } else if (error.message.includes('invalid') || error.message.includes('Token')) {
+          throw new Error('Código incorrecto. Verifica e intenta de nuevo.')
         }
+        throw error
+      }
 
-        if (data.session) {
-          onClose()
-          if (onAuthSuccess) {
-            onAuthSuccess()
-          } else {
-            router.push('/crear')
-            router.refresh()
-          }
+      if (data.session) {
+        onClose()
+        if (onAuthSuccess) {
+          onAuthSuccess()
+        } else {
+          router.push('/crear')
+          router.refresh()
         }
       }
     } catch (err: any) {
@@ -230,147 +214,58 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
         </button>
 
         <div className="p-6 sm:p-8">
-          {/* Progress */}
-          <div className="flex items-center justify-center gap-2 mb-6">
-            {['contact', 'verify'].map((s, i) => (
-              <div key={s} className="flex items-center gap-2">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all ${
-                  step === s 
-                    ? 'bg-gradient-accent text-white' 
-                    : ['contact', 'verify'].indexOf(step) > i
-                      ? 'bg-tbt-success text-white'
-                      : 'bg-tbt-border text-tbt-muted'
-                }`}>
-                  {['contact', 'verify'].indexOf(step) > i ? (
-                    <Check className="w-4 h-4" />
-                  ) : (
-                    i + 1
-                  )}
-                </div>
-                {i < 1 && (
-                  <div className={`w-8 h-0.5 ${
-                    ['contact', 'verify'].indexOf(step) > i 
-                      ? 'bg-tbt-success' 
-                      : 'bg-tbt-border'
-                  }`} />
-                )}
-              </div>
-            ))}
-          </div>
-
           {step === 'contact' && (
             <form onSubmit={handleSendOTP}>
-              {/* Toggle Phone / Email */}
-              <div className="flex rounded-xl bg-tbt-bg p-1 mb-6">
-                <button
-                  type="button"
-                  onClick={() => { setMethod('phone'); setError('') }}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-medium transition-all ${
-                    method === 'phone'
-                      ? 'bg-tbt-card text-tbt-text shadow-sm'
-                      : 'text-tbt-muted hover:text-tbt-text'
-                  }`}
-                >
-                  <Phone className="w-4 h-4" />
-                  Teléfono
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setMethod('email'); setError('') }}
-                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-medium transition-all ${
-                    method === 'email'
-                      ? 'bg-tbt-card text-tbt-text shadow-sm'
-                      : 'text-tbt-muted hover:text-tbt-text'
-                  }`}
-                >
-                  <Mail className="w-4 h-4" />
-                  Email
-                </button>
-              </div>
+              {/* Phone Input */}
+              <div>
+                <label className="input-label">Número de teléfono</label>
+                <div className="flex gap-2">
+                  {/* Country Selector */}
+                  <div className="relative" ref={dropdownRef}>
+                    <button
+                      type="button"
+                      onClick={() => setShowCountryDropdown(!showCountryDropdown)}
+                      className="flex items-center gap-1 h-[52px] px-3 rounded-xl border border-tbt-border bg-tbt-bg hover:border-tbt-primary/50 transition-colors min-w-[100px]"
+                    >
+                      <span className="text-xl">{selectedCountry.flag}</span>
+                      <span className="text-sm text-tbt-muted">{selectedCountry.dial}</span>
+                      <ChevronDown className="w-4 h-4 text-tbt-muted" />
+                    </button>
 
-              <div className="text-center mb-6">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${
-                  method === 'phone' ? 'bg-tbt-gold/20' : 'bg-tbt-primary/20'
-                }`}>
-                  {method === 'phone' ? (
-                    <Phone className="w-6 h-6 text-tbt-gold" />
-                  ) : (
-                    <Mail className="w-6 h-6 text-tbt-primary" />
-                  )}
-                </div>
-                <p className="text-tbt-text font-medium">Únete a TBT</p>
-                <p className="text-sm text-tbt-muted mt-1">
-                  {method === 'phone' 
-                    ? 'Te enviaremos un SMS con el código' 
-                    : 'Te enviaremos un código a tu email'
-                  }
-                </p>
-              </div>
-
-              {method === 'phone' ? (
-                <div>
-                  <label className="input-label">Número de teléfono</label>
-                  <div className="flex gap-2">
-                    {/* Country Selector */}
-                    <div className="relative" ref={dropdownRef}>
-                      <button
-                        type="button"
-                        onClick={() => setShowCountryDropdown(!showCountryDropdown)}
-                        className="flex items-center gap-1 h-[52px] px-3 rounded-xl border border-tbt-border bg-tbt-bg hover:border-tbt-primary/50 transition-colors min-w-[100px]"
-                      >
-                        <span className="text-xl">{selectedCountry.flag}</span>
-                        <span className="text-sm text-tbt-muted">{selectedCountry.dial}</span>
-                        <ChevronDown className="w-4 h-4 text-tbt-muted" />
-                      </button>
-
-                      {showCountryDropdown && (
-                        <div className="absolute top-full left-0 mt-1 w-64 max-h-48 overflow-y-auto bg-tbt-card border border-tbt-border rounded-xl shadow-xl z-50">
-                          {COUNTRIES.map((country) => (
-                            <button
-                              key={country.code}
-                              type="button"
-                              onClick={() => {
-                                setSelectedCountry(country)
-                                setShowCountryDropdown(false)
-                              }}
-                              className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-tbt-bg transition-colors text-left ${
-                                selectedCountry.code === country.code ? 'bg-tbt-primary/10' : ''
-                              }`}
-                            >
-                              <span className="text-xl">{country.flag}</span>
-                              <span className="text-sm text-tbt-text flex-1">{country.name}</span>
-                              <span className="text-sm text-tbt-muted">{country.dial}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <input
-                      type="tel"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
-                      placeholder="300 123 4567"
-                      className="input flex-1"
-                      required
-                      autoFocus
-                    />
+                    {showCountryDropdown && (
+                      <div className="absolute top-full left-0 mt-1 w-64 max-h-48 overflow-y-auto bg-tbt-card border border-tbt-border rounded-xl shadow-xl z-50">
+                        {COUNTRIES.map((country) => (
+                          <button
+                            key={country.code}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCountry(country)
+                              setShowCountryDropdown(false)
+                            }}
+                            className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-tbt-bg transition-colors text-left ${
+                              selectedCountry.code === country.code ? 'bg-tbt-primary/10' : ''
+                            }`}
+                          >
+                            <span className="text-xl">{country.flag}</span>
+                            <span className="text-sm text-tbt-text flex-1">{country.name}</span>
+                            <span className="text-sm text-tbt-muted">{country.dial}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ) : (
-                <div>
-                  <label className="input-label">Correo electrónico</label>
+
                   <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="tu@email.com"
-                    className="input"
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                    placeholder="300 123 4567"
+                    className="input flex-1"
                     required
                     autoFocus
                   />
                 </div>
-              )}
+              </div>
 
               {error && (
                 <div className="flex items-center gap-2 mt-3 text-tbt-primary">
@@ -388,11 +283,32 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
                   <>
-                    Enviar código
+                    Enviar código Auth
                     <ArrowRight className="w-5 h-5" />
                   </>
                 )}
               </button>
+
+              {/* Divider + Logos */}
+              <div className="mt-8">
+                <hr className="border-tbt-border" />
+                <div className="flex items-center justify-center gap-8 mt-6">
+                  <Image 
+                    src="/logos/brocha.png" 
+                    alt="BROCHA" 
+                    width={60} 
+                    height={40}
+                    className="opacity-80 hover:opacity-100 transition-opacity"
+                  />
+                  <Image 
+                    src="/logos/transbit.png" 
+                    alt="Transbit" 
+                    width={80} 
+                    height={40}
+                    className="opacity-80 hover:opacity-100 transition-opacity"
+                  />
+                </div>
+              </div>
             </form>
           )}
 
@@ -404,25 +320,34 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
                 </div>
                 <p className="text-xl text-tbt-text font-medium">¡Código enviado!</p>
                 <p className="text-sm text-tbt-muted mt-2">
-                  Ingresa el código de 8 dígitos enviado a:
+                  Ingresa el código de {useDevMode ? '6' : '8'} dígitos enviado a:
                 </p>
                 <p className="text-tbt-primary font-medium mt-1">
-                  {method === 'email' ? email : `${selectedCountry.flag} ${selectedCountry.dial} ${phone}`}
+                  {useDevMode ? (
+                    <>📧 {DEV_EMAIL}</>
+                  ) : (
+                    <>{selectedCountry.flag} {selectedCountry.dial} {phone}</>
+                  )}
                 </p>
+                {useDevMode && (
+                  <p className="text-xs text-yellow-500 mt-2 bg-yellow-500/10 p-2 rounded">
+                    ⚠️ Modo desarrollo activo
+                  </p>
+                )}
               </div>
 
               <div>
                 <label className="input-label">Código de verificación</label>
-                  <input
-                    type="text"
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                    placeholder="00000000"
-                    className="input text-center text-2xl tracking-[0.5em] font-mono"
-                    maxLength={8}
-                    required
-                    autoFocus
-                  />
+                <input
+                  type="text"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                  placeholder="00000000"
+                  className="input text-center text-2xl tracking-[0.5em] font-mono"
+                  maxLength={8}
+                  required
+                  autoFocus
+                />
               </div>
 
               {error && (
@@ -465,8 +390,29 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
                 }}
                 className="btn-ghost w-full text-sm"
               >
-                {method === 'email' ? 'Usar otro email' : 'Usar otro número'}
+                Usar otro número
               </button>
+
+              {/* Divider + Logos */}
+              <div className="mt-6">
+                <hr className="border-tbt-border" />
+                <div className="flex items-center justify-center gap-8 mt-6">
+                  <Image 
+                    src="/logos/brocha.png" 
+                    alt="BROCHA" 
+                    width={60} 
+                    height={40}
+                    className="opacity-80 hover:opacity-100 transition-opacity"
+                  />
+                  <Image 
+                    src="/logos/transbit.png" 
+                    alt="Transbit" 
+                    width={80} 
+                    height={40}
+                    className="opacity-80 hover:opacity-100 transition-opacity"
+                  />
+                </div>
+              </div>
             </form>
           )}
         </div>

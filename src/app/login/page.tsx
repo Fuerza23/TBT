@@ -123,34 +123,34 @@ export default function LoginPage() {
     try {
       if (method === 'email') {
         const types = ['email', 'magiclink', 'signup'] as const
-        let lastError: any = null
+      let lastError: any = null
 
-        for (const type of types) {
-          const { data, error } = await supabase.auth.verifyOtp({
+      for (const type of types) {
+        const { data, error } = await supabase.auth.verifyOtp({
             email,
-            token: otp,
-            type,
-          })
+          token: otp,
+          type,
+        })
 
-          if (!error && data.session) {
-            router.push('/dashboard')
-            router.refresh()
-            return
-          }
-
-          lastError = error
-          if (error && !error.message.includes('invalid') && !error.message.includes('Token')) {
-            break
-          }
+        if (!error && data.session) {
+          router.push('/dashboard')
+          router.refresh()
+          return
         }
 
-        if (lastError) {
-          if (lastError.message.includes('expired')) {
-            throw new Error('El código expiró. Solicita uno nuevo.')
-          } else if (lastError.message.includes('invalid') || lastError.message.includes('Token')) {
-            throw new Error('Código incorrecto. Verifica e intenta de nuevo.')
-          }
-          throw lastError
+        lastError = error
+        if (error && !error.message.includes('invalid') && !error.message.includes('Token')) {
+          break
+        }
+      }
+
+      if (lastError) {
+        if (lastError.message.includes('expired')) {
+          throw new Error('El código expiró. Solicita uno nuevo.')
+        } else if (lastError.message.includes('invalid') || lastError.message.includes('Token')) {
+          throw new Error('Código incorrecto. Verifica e intenta de nuevo.')
+        }
+        throw lastError
         }
       } else {
         const fullPhone = getFullPhoneNumber()
@@ -306,16 +306,16 @@ export default function LoginPage() {
                         </div>
 
                         {/* Phone Input */}
-                        <input
-                          id="phone"
-                          type="tel"
-                          value={phone}
+                      <input
+                        id="phone"
+                        type="tel"
+                        value={phone}
                           onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
                           placeholder="300 123 4567"
                           className="input flex-1"
-                          required
-                          autoFocus
-                        />
+                        required
+                        autoFocus
+                      />
                       </div>
                     </div>
                   )}

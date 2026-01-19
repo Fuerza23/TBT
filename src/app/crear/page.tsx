@@ -11,7 +11,7 @@ import {
   User,
   Users,
   Building2,
-  Image as ImageIcon,
+  Image as ImageIcon, 
   DollarSign, 
   Percent,
   Check,
@@ -257,11 +257,11 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
         if (creatorData.creatorType === 'individual' && !creatorData.legalName.trim()) {
           setError('El nombre legal es requerido')
           return false
-        }
+      }
         if (creatorData.creatorType === 'group' && !creatorData.collectiveName.trim()) {
           setError('El nombre del colectivo es requerido')
           return false
-        }
+      }
         if (creatorData.creatorType === 'corporation' && !creatorData.entityName.trim()) {
           setError('El nombre de la entidad es requerido')
           return false
@@ -283,7 +283,7 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
         if (!commProData.marketPrice || parseFloat(commProData.marketPrice) <= 0) {
           setError('Ingresa un precio de mercado válido')
           return false
-        }
+      }
         if (commProData.scanStatus === 'conflict' && !commProData.originalityDeclaration) {
           setError('Debes declarar el origen de la obra')
           return false
@@ -308,13 +308,13 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
     // Special actions per phase
     if (phase === 4 && commProData.scanStatus === 'pending') {
       await runPlagiarismScan()
-      return
-    }
+        return
+      }
     
     if (phase === 5 && !contextData.aiSummary) {
       await generateContext()
-      return
-    }
+        return
+      }
     
     nextPhase()
   }
@@ -343,18 +343,18 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
       let mediaUrl = ''
       if (workData.mediaFile) {
         const fileExt = workData.mediaFile.name.split('.').pop()
-        const fileName = `${user.id}/${Date.now()}.${fileExt}`
-        
-        const { error: uploadError } = await supabase.storage
-          .from('works-media')
+      const fileName = `${user.id}/${Date.now()}.${fileExt}`
+      
+      const { error: uploadError } = await supabase.storage
+        .from('works-media')
           .upload(fileName, workData.mediaFile)
 
         if (uploadError) throw new Error('Error al subir imagen')
 
-        const { data: { publicUrl } } = supabase.storage
-          .from('works-media')
-          .getPublicUrl(fileName)
-        
+      const { data: { publicUrl } } = supabase.storage
+        .from('works-media')
+        .getPublicUrl(fileName)
+
         mediaUrl = publicUrl
       }
 
@@ -457,9 +457,9 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
   }
 
   if (!user && phase === 1) {
-    return (
-      <>
-        <Navbar user={null} />
+  return (
+    <>
+      <Navbar user={null} />
         <main className="pt-24 pb-16 min-h-screen flex items-center justify-center">
           <div className="text-center">
             <Loader2 className="w-8 h-8 animate-spin text-tbt-primary mx-auto mb-4" />
@@ -500,11 +500,11 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                     phase === p.id 
                       ? 'bg-gradient-accent text-white shadow-lg shadow-tbt-primary/25' 
                       : phase > p.id
-                        ? 'bg-tbt-success text-white'
-                        : 'bg-tbt-border text-tbt-muted'
-                  }`}>
+                      ? 'bg-tbt-success text-white'
+                      : 'bg-tbt-border text-tbt-muted'
+                }`}>
                     {phase > p.id ? <Check className="w-5 h-5" /> : p.icon}
-                  </div>
+                </div>
                   <span className={`text-[10px] mt-1 ${
                     phase === p.id ? 'text-tbt-primary font-medium' : 'text-tbt-muted'
                   }`}>
@@ -558,8 +558,8 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                         }`}>{label}</p>
                       </button>
                     ))}
-                  </div>
-                </div>
+                    </div>
+                      </div>
 
                 {/* Dynamic fields based on creator type */}
                 {creatorData.creatorType === 'individual' && (
@@ -572,7 +572,7 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                       placeholder="Tu nombre legal completo"
                       className="input"
                     />
-                  </div>
+                      </div>
                 )}
 
                 {creatorData.creatorType === 'group' && (
@@ -586,7 +586,7 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                         placeholder="Nombre del grupo o colectivo"
                         className="input"
                       />
-                    </div>
+                </div>
                     <div>
                       <label className="input-label">Representante Principal</label>
                       <input
@@ -602,16 +602,16 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
 
                 {creatorData.creatorType === 'corporation' && (
                   <>
-                    <div>
+                <div>
                       <label className="input-label">Nombre de la Entidad *</label>
-                      <input
-                        type="text"
+                  <input
+                    type="text"
                         value={creatorData.entityName}
                         onChange={(e) => updateCreator({ entityName: e.target.value })}
                         placeholder="Nombre registrado de la empresa"
-                        className="input"
-                      />
-                    </div>
+                    className="input"
+                  />
+                </div>
                     <div>
                       <label className="input-label">NIT / Tax ID</label>
                       <input
@@ -859,20 +859,20 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                   </h3>
                   
                   <div className="grid sm:grid-cols-2 gap-4">
-                    <div>
+                <div>
                       <label className="input-label">Precio de Mercado *</label>
-                      <div className="relative">
+                  <div className="relative">
                         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-tbt-muted">$</span>
-                        <input
-                          type="number"
+                    <input
+                      type="number"
                           value={commProData.marketPrice}
                           onChange={(e) => updateCommPro({ marketPrice: e.target.value })}
-                          placeholder="0.00"
+                      placeholder="0.00"
                           className="input pl-8"
-                        />
-                      </div>
-                    </div>
-                    <div>
+                    />
+                  </div>
+                </div>
+                <div>
                       <label className="input-label">Moneda</label>
                       <select
                         value={commProData.currency}
@@ -895,9 +895,9 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                         { type: 'percentage', label: 'Porcentaje' },
                         { type: 'fixed', label: 'Monto fijo' },
                       ].map(({ type, label }) => (
-                        <button
+                    <button
                           key={type}
-                          type="button"
+                      type="button"
                           onClick={() => updateCommPro({ royaltyType: type as any })}
                           className={`py-2 px-3 rounded-lg text-sm font-medium transition-all ${
                             commProData.royaltyType === type
@@ -906,7 +906,7 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                           }`}
                         >
                           {label}
-                        </button>
+                    </button>
                       ))}
                     </div>
                     
@@ -942,7 +942,7 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                       <p className="text-tbt-muted mb-4">
                         Realizaremos un escaneo para verificar la originalidad de tu obra
                       </p>
-                      <button
+                    <button
                         onClick={runPlagiarismScan}
                         disabled={isLoading}
                         className="btn-primary"
@@ -958,8 +958,8 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                             Iniciar Escaneo
                           </>
                         )}
-                      </button>
-                    </div>
+                    </button>
+                  </div>
                   )}
 
                   {commProData.scanStatus === 'clean' && (
@@ -968,7 +968,7 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                       <div>
                         <p className="font-medium text-tbt-success">Escaneo Limpio</p>
                         <p className="text-sm text-tbt-muted">No se encontraron conflictos</p>
-                      </div>
+                </div>
                     </div>
                   )}
 
@@ -976,7 +976,7 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                     <div className="space-y-4">
                       <div className="flex items-center gap-3 p-4 rounded-lg bg-tbt-warning/10 border border-tbt-warning/20">
                         <AlertCircle className="w-6 h-6 text-tbt-warning" />
-                        <div>
+                <div>
                           <p className="font-medium text-tbt-warning">Coincidencia Detectada</p>
                           <p className="text-sm text-tbt-muted">
                             Similitud: {commProData.conflictSimilarity}%
@@ -1010,23 +1010,23 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                               className="w-4 h-4 text-tbt-primary"
                             />
                             <span className="text-sm text-tbt-text">{label}</span>
-                          </label>
+                  </label>
                         ))}
                       </div>
 
                       {commProData.originalityDeclaration === 'derivative' && (
                         <div>
                           <label className="input-label">Link a la obra original</label>
-                          <input
+                    <input
                             type="url"
                             value={commProData.derivativeReference}
                             onChange={(e) => updateCommPro({ derivativeReference: e.target.value })}
                             placeholder="URL de la obra que transformaste"
                             className="input"
-                          />
-                        </div>
-                      )}
-                    </div>
+                    />
+                  </div>
+                  )}
+                </div>
                   )}
                 </div>
               </div>
@@ -1100,19 +1100,19 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
 
                     {/* Sign Context */}
                     <label className="flex items-center gap-3 p-4 rounded-xl border border-tbt-gold/30 bg-tbt-gold/5 cursor-pointer">
-                      <input
-                        type="checkbox"
+                  <input
+                    type="checkbox"
                         checked={contextData.isSigned}
                         onChange={(e) => updateContext({ isSigned: e.target.checked })}
                         className="w-5 h-5 rounded text-tbt-gold"
-                      />
-                      <div>
+                  />
+                  <div>
                         <p className="font-medium text-tbt-text">Firmar y Bloquear Contexto</p>
                         <p className="text-xs text-tbt-muted">
                           Al firmar, confirmas que toda la información es correcta y se bloqueará permanentemente.
                         </p>
-                      </div>
-                    </label>
+                  </div>
+                </label>
                   </>
                 )}
               </div>
@@ -1124,13 +1124,13 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                 <div className="text-center mb-6">
                   <h2 className="text-xl font-semibold text-tbt-text">Pago TBT</h2>
                   <p className="text-sm text-tbt-muted">Tarifa de registro</p>
-                </div>
+                  </div>
 
                 <div className="text-center py-8">
                   <div className="w-20 h-20 rounded-full bg-tbt-gold/20 flex items-center justify-center mx-auto mb-6">
                     <CreditCard className="w-10 h-10 text-tbt-gold" />
-                  </div>
-                  
+                </div>
+
                   <p className="text-4xl font-bold text-tbt-text mb-2">$5.00 USD</p>
                   <p className="text-tbt-muted mb-8">Tarifa única de registro TBT</p>
 
@@ -1176,8 +1176,8 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                       )}
                     </button>
                   )}
-                </div>
-              </div>
+                    </div>
+                  </div>
             )}
 
             {/* Phase 7: Delivery */}
@@ -1202,15 +1202,15 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
 
                   {/* Summary */}
                   <div className="bg-tbt-bg rounded-xl p-4 mb-6 text-left space-y-3">
-                    <div className="flex justify-between">
+                  <div className="flex justify-between">
                       <span className="text-tbt-muted">Obra:</span>
                       <span className="text-tbt-text font-medium">{workData.title}</span>
-                    </div>
-                    <div className="flex justify-between">
+                  </div>
+                  <div className="flex justify-between">
                       <span className="text-tbt-muted">Creador:</span>
                       <span className="text-tbt-text">{creatorData.publicAlias}</span>
-                    </div>
-                    <div className="flex justify-between">
+                  </div>
+                  <div className="flex justify-between">
                       <span className="text-tbt-muted">Precio:</span>
                       <span className="text-tbt-text">${commProData.marketPrice} {commProData.currency}</span>
                     </div>
@@ -1223,9 +1223,9 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                             ? `${commProData.royaltyValue}%`
                             : `$${commProData.royaltyValue} ${commProData.currency}`
                         }
-                      </span>
-                    </div>
+                    </span>
                   </div>
+                </div>
 
                   <button
                     onClick={handleFinalSubmit}
@@ -1258,37 +1258,37 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
 
             {/* Navigation */}
             {phase >= 2 && phase < 7 && (
-              <div className="flex gap-3 mt-8">
+            <div className="flex gap-3 mt-8">
                 {phase > 2 && (
-                  <button
-                    type="button"
+                <button
+                  type="button"
                     onClick={prevPhase}
-                    disabled={isLoading}
+                  disabled={isLoading}
                     className="btn-secondary"
-                  >
-                    <ArrowLeft className="w-5 h-5" />
-                    Atrás
-                  </button>
-                )}
-                
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                  Atrás
+                </button>
+              )}
+              
                 {phase < 6 && (
-                  <button
-                    type="button"
+                <button
+                  type="button"
                     onClick={handleNextPhase}
-                    disabled={isLoading}
-                    className="btn-primary flex-1"
-                  >
-                    {isLoading ? (
+                  disabled={isLoading}
+                  className="btn-primary flex-1"
+                >
+                  {isLoading ? (
                       <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <>
+                  ) : (
+                    <>
                         Continuar
                         <ArrowRight className="w-5 h-5" />
-                      </>
-                    )}
-                  </button>
-                )}
-              </div>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
             )}
           </div>
         </div>

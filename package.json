@@ -9,21 +9,22 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@aws-sdk/client-sns": "^3.971.0",
     "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@supabase/supabase-js": "^2.45.0",
-    "next": "14.2.5",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "qrcode": "^1.5.4",
+    "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
     "lucide-react": "^0.441.0",
-    "clsx": "^2.1.1"
+    "next": "14.2.5",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
-    "@types/qrcode": "^1.5.5",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.41",
     "tailwindcss": "^3.4.10",
