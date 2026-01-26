@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
         console.error('Code exchange error:', error)
         return NextResponse.redirect(new URL('/login?error=code_exchange_failed', requestUrl.origin))
       }
-      return NextResponse.redirect(new URL('/dashboard', requestUrl.origin))
+      return NextResponse.redirect(new URL('/mis-tbts', requestUrl.origin))
     }
 
     if (token_hash && type) {
@@ -40,13 +40,13 @@ export async function GET(request: NextRequest) {
         console.error('Token verification error:', error)
         return NextResponse.redirect(new URL('/login?error=token_invalid', requestUrl.origin))
       }
-      return NextResponse.redirect(new URL('/dashboard', requestUrl.origin))
+      return NextResponse.redirect(new URL('/mis-tbts', requestUrl.origin))
     }
 
     // Si no hay code ni token_hash, verificar si ya hay sesión
     const { data: { session } } = await supabase.auth.getSession()
     if (session) {
-      return NextResponse.redirect(new URL('/dashboard', requestUrl.origin))
+      return NextResponse.redirect(new URL('/mis-tbts', requestUrl.origin))
     }
 
   } catch (err) {

@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react'
 import { Shield, Calendar, User } from 'lucide-react'
 import QRCode from 'qrcode'
-import type { WorkWithRelations } from '@/types/database'
+
+// Using any type because Supabase returns dynamic data
+type WorkData = any
 
 interface CertificateProps {
-  work: WorkWithRelations
+  work: WorkData
   compact?: boolean
 }
 

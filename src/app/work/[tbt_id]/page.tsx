@@ -24,9 +24,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     return { title: 'TBT no encontrado' }
   }
 
+  // Handle creator which can be object or array from Supabase
+  const creatorData = work.creator as any
+  const creatorName = Array.isArray(creatorData) 
+    ? creatorData[0]?.display_name 
+    : creatorData?.display_name
+
   return {
     title: `${work.title} | TBT Verificado`,
-    description: work.description || `Obra certificada por ${work.creator?.display_name}`,
+    description: work.description || `Obra certificada por ${creatorName}`,
     openGraph: {
       title: work.title,
       description: work.description || undefined,
@@ -164,7 +170,7 @@ export default async function WorkVerificationPage({ params }: PageProps) {
                       <div className="flex items-start gap-3">
                         <Tag className="w-4 h-4 text-tbt-muted mt-0.5" />
                         <div className="flex flex-wrap gap-2">
-                          {context.keywords.map((keyword, i) => (
+                          {context.keywords.map((keyword: string, i: number) => (
                             <span key={i} className="badge bg-tbt-border text-tbt-text">
                               {keyword}
                             </span>

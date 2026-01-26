@@ -6,7 +6,7 @@ export const createBrowserClient = () => {
   return createClientComponentClient()
 }
 
-// Cliente para el servidor (API routes, Server Components)
+// Cliente para el servidor (Server Components) - sin autenticación de usuario
 export const createServerClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!

@@ -57,12 +57,9 @@ export function Navbar({ user }: NavbarProps) {
             </Link>
             {user ? (
               <>
-                <Link href="/crear" className="btn-ghost text-sm">
+                <Link href="/mis-tbts" className="btn-ghost text-sm">
                   <Plus className="w-4 h-4" />
-                  Crear TBT
-                </Link>
-                <Link href="/dashboard" className="btn-ghost text-sm">
-                  Dashboard
+                  Mis TBTs
                 </Link>
                 <div className="w-px h-6 bg-tbt-border mx-2" />
                 <Link href="/perfil" className="flex items-center gap-2 btn-ghost text-sm">
@@ -83,14 +80,9 @@ export function Navbar({ user }: NavbarProps) {
                 </Link>
               </>
             ) : (
-              <>
-                <Link href="/login" className="btn-ghost text-sm">
-                  Iniciar Sesión
-                </Link>
-                <Link href="/registro" className="btn-primary text-sm">
-                  Registrarse
-                </Link>
-              </>
+              <Link href="/login" className="btn-primary text-sm">
+                Dashboard 
+              </Link>
             )}
           </div>
 
@@ -120,29 +112,18 @@ export function Navbar({ user }: NavbarProps) {
             {user ? (
               <>
                 <Link 
-                  href="/crear" 
+                  href="/mis-tbts" 
                   className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-tbt-border/50 transition-colors"
                   onClick={() => setIsMenuOpen(false)}
                 >
                   <Plus className="w-5 h-5 text-tbt-muted" />
-                  <span>Crear TBT</span>
-                </Link>
-                <Link 
-                  href="/dashboard" 
-                  className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-tbt-border/50 transition-colors"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  <User className="w-5 h-5 text-tbt-muted" />
-                  <span>Mi Dashboard</span>
+                  <span>Mis TBTs</span>
                 </Link>
               </>
             ) : (
-              <div className="flex gap-2 pt-2">
-                <Link href="/login" className="btn-secondary flex-1 text-center">
-                  Iniciar Sesión
-                </Link>
-                <Link href="/registro" className="btn-primary flex-1 text-center">
-                  Registrarse
+              <div className="pt-2">
+                <Link href="/login" className="btn-primary w-full text-center">
+                  Dashboard
                 </Link>
               </div>
             )}

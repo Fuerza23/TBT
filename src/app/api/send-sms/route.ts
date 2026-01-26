@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns'
-import { createServerClient } from '@/lib/supabase'
+import { createRouteClient } from '@/lib/supabase-route'
 
 // Initialize SNS Client
 const snsClient = new SNSClient({
@@ -21,7 +21,7 @@ interface SendSMSRequest {
 export async function POST(request: NextRequest) {
   try {
     // Initialize Supabase client
-    const supabase = createServerClient()
+    const supabase = createRouteClient()
     
     // Get authorization header for user context
     const authHeader = request.headers.get('authorization')

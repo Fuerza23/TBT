@@ -445,20 +445,20 @@ export interface Database {
 }
 
 // Tipos extendidos para uso en la app
-export interface Profile extends Database['public']['Tables']['profiles']['Row'] {}
-export interface Work extends Database['public']['Tables']['works']['Row'] {}
-export interface WorkCommerce extends Database['public']['Tables']['work_commerce']['Row'] {}
-export interface WorkContext extends Database['public']['Tables']['work_context']['Row'] {}
-export interface Transfer extends Database['public']['Tables']['transfers']['Row'] {}
-export interface Certificate extends Database['public']['Tables']['certificates']['Row'] {}
-export interface Alert extends Database['public']['Tables']['alerts']['Row'] {}
-export interface TBTPayment extends Database['public']['Tables']['tbt_payments']['Row'] {}
-export interface PlagiarismCheck extends Database['public']['Tables']['plagiarism_checks']['Row'] {}
-export interface ContextSnapshot extends Database['public']['Tables']['context_snapshots']['Row'] {}
-export interface MMSDelivery extends Database['public']['Tables']['mms_deliveries']['Row'] {}
+export type Profile = Database['public']['Tables']['profiles']['Row']
+export type Work = Database['public']['Tables']['works']['Row']
+export type WorkCommerce = Database['public']['Tables']['work_commerce']['Row']
+export type WorkContext = Database['public']['Tables']['work_context']['Row']
+export type Transfer = Database['public']['Tables']['transfers']['Row']
+export type Certificate = Database['public']['Tables']['certificates']['Row']
+export type Alert = Database['public']['Tables']['alerts']['Row']
+export type TBTPayment = Database['public']['Tables']['tbt_payments']['Row']
+export type PlagiarismCheck = Database['public']['Tables']['plagiarism_checks']['Row']
+export type ContextSnapshot = Database['public']['Tables']['context_snapshots']['Row']
+export type MMSDelivery = Database['public']['Tables']['mms_deliveries']['Row']
 
 // Tipo para obra con relaciones
-export interface WorkWithRelations extends Work {
+export type WorkWithRelations = Work & {
   creator?: Profile
   current_owner?: Profile
   work_commerce?: WorkCommerce

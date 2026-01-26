@@ -30,8 +30,14 @@ import {
   Linkedin,
   Globe,
   Plus,
-  Link2
+  Link2,
+  Mail,
+  FileText,
+  Layers,
+  Palette,
+  Eye
 } from 'lucide-react'
+import PhoneInput from './PhoneInput'
 
 // Tipos
 type Phase = 2 | 3 | 4 | 5 | 6 | 7
@@ -40,8 +46,8 @@ type OriginalityType = 'original' | 'derivative' | 'authorized_edition'
 
 const PHASES = [
   { id: 2, name: 'Creador', icon: '👤' },
-  { id: 3, name: 'La Obra', icon: '🎨' },
-  { id: 4, name: 'CommPro', icon: '🛡️' },
+  { id: 3, name: 'Obra', icon: '🎨' },
+  { id: 4, name: 'Commercial Protection', icon: '🛡️' },
   { id: 5, name: 'Contexto', icon: '🌍' },
   { id: 6, name: 'Pago', icon: '💳' },
   { id: 7, name: 'Entrega', icon: '📨' },
@@ -54,6 +60,17 @@ const WORK_CATEGORIES = [
 ]
 
 const CURRENCIES = ['USD', 'EUR', 'COP', 'MXN', 'BTC', 'ETH']
+
+// Generate unique transfer code (XXXX-XXXX format)
+function generateTransferCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // Sin I, O, 0, 1
+  let code = ''
+  for (let i = 0; i < 8; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)]
+    if (i === 3) code += '-'
+  }
+  return code
+}
 
 interface CreateTBTModalProps {
   isOpen: boolean
@@ -86,15 +103,17 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
     leadRepresentative: '',
     entityName: '',
     taxId: '',
+    corporateTitle: '',
+    email: '',
     publicAlias: '',
     credentials: '',
-    socialLinkedin: '',
+    socialLinkedin: [''] as string[],
     socialWebsite: '',
-    socialInstagram: '',
-    socialFacebook: '',
-    socialYoutube: '',
+    socialInstagram: [''] as string[],
+    socialFacebook: [''] as string[],
+    socialYoutube: [''] as string[],
     socialOther: '',
-    showOtherSocial: false,
+    selectedSocials: [] as string[],
     aboutCreator: '',
     profilePhoto: null as File | null,
     profilePhotoPreview: '',
@@ -108,7 +127,7 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
     creationDate: '',
     workStatus: 'publicado' as 'publicado' | 'privado',
     isPublished: true,
-    assetLinks: ['', '', '', '', ''],
+    assetLinks: ['', ''],
     aboutWork: '',
     mediaFile: null as File | null,
     mediaPreview: '',
@@ -137,6 +156,7 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
     headlines: [] as string[],
     aiSummary: '',
     userEditedSummary: '',
+    signaturePhone: '',
     isSigned: false,
   })
 
@@ -159,6 +179,45 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
       return
     }
     setUser(user)
+    
+    // Pre-load profile data for returning creators
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single()
+    
+    if (profile) {
+      setCreatorData(prev => ({
+        ...prev,
+        creatorType: profile.creator_type || 'individual',
+        legalName: profile.legal_name || '',
+        publicAlias: profile.public_alias || '',
+        collectiveName: profile.collective_name || '',
+        leadRepresentative: profile.lead_representative || '',
+        entityName: profile.entity_name || '',
+        taxId: profile.tax_id || '',
+        corporateTitle: profile.corporate_title || '',
+        email: profile.email || user.email || '',
+        credentials: profile.credentials || '',
+        socialLinkedin: profile.social_linkedin || [''],
+        socialWebsite: profile.social_website || '',
+        socialInstagram: profile.social_instagram || [''],
+        socialFacebook: profile.social_facebook || [''],
+        socialYoutube: profile.social_youtube || [''],
+        socialOther: profile.social_other?.[0] || '',
+        aboutCreator: profile.bio || '',
+      }))
+    }
+    
+    // Auto-fill signature phone from login phone (requirement 7)
+    if (user.phone) {
+      setContextData(prev => ({
+        ...prev,
+        signaturePhone: user.phone || '',
+      }))
+    }
+    
     setPhase(2)
   }
 
@@ -228,11 +287,15 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
     setIsLoading(false)
   }
 
+  // Allowed image types for Supabase storage
+  const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+  const ALLOWED_IMAGE_EXTENSIONS = '.jpg,.jpeg,.png,.gif,.webp'
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (!file.type.startsWith('image/')) {
-      setError('Por favor selecciona una imagen')
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setError('Formato no soportado. Usa JPG, PNG, GIF o WEBP')
       return
     }
     if (file.size > 10 * 1024 * 1024) {
@@ -336,12 +399,16 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
     setError('')
     switch (phase) {
       case 2:
-        if (!creatorData.publicAlias.trim()) {
-          setError('El alias público es requerido')
+        if (!creatorData.email.trim()) {
+          setError('El email es requerido')
           return false
         }
-        if (creatorData.creatorType === 'individual' && !creatorData.legalName.trim()) {
-          setError('El nombre legal es requerido')
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(creatorData.email)) {
+          setError('Ingresa un email válido')
+          return false
+        }
+        if (!creatorData.publicAlias.trim()) {
+          setError('El alias público es requerido')
           return false
         }
         if (creatorData.creatorType === 'group' && !creatorData.collectiveName.trim()) {
@@ -425,6 +492,42 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
         mediaUrl = publicUrl
       }
 
+      // Upload audio/video file if present
+      let audioVideoUrl = ''
+      if (workData.audioVideoFile) {
+        const fileExt = workData.audioVideoFile.name.split('.').pop()
+        const fileName = `${user.id}/av_${Date.now()}.${fileExt}`
+        const { error: uploadError } = await supabase.storage
+          .from('works-media')
+          .upload(fileName, workData.audioVideoFile)
+        if (uploadError) {
+          console.warn('Error uploading audio/video:', uploadError)
+        } else {
+          const { data: { publicUrl } } = supabase.storage
+            .from('works-media')
+            .getPublicUrl(fileName)
+          audioVideoUrl = publicUrl
+        }
+      }
+
+      // Upload profile photo if present
+      let avatarUrl = ''
+      if (creatorData.profilePhoto) {
+        const fileExt = creatorData.profilePhoto.name.split('.').pop()
+        const fileName = `${user.id}/avatar_${Date.now()}.${fileExt}`
+        const { error: uploadError } = await supabase.storage
+          .from('works-media')
+          .upload(fileName, creatorData.profilePhoto)
+        if (uploadError) {
+          console.warn('Error uploading profile photo:', uploadError)
+        } else {
+          const { data: { publicUrl } } = supabase.storage
+            .from('works-media')
+            .getPublicUrl(fileName)
+          avatarUrl = publicUrl
+        }
+      }
+
       await supabase
         .from('profiles')
         .update({
@@ -435,11 +538,17 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
           lead_representative: creatorData.leadRepresentative,
           entity_name: creatorData.entityName,
           tax_id: creatorData.taxId,
+          corporate_title: creatorData.corporateTitle,
           credentials: creatorData.credentials,
           social_linkedin: creatorData.socialLinkedin,
           social_website: creatorData.socialWebsite,
           social_instagram: creatorData.socialInstagram,
+          social_facebook: creatorData.socialFacebook,
+          social_youtube: creatorData.socialYoutube,
+          social_other: creatorData.socialOther ? [creatorData.socialOther] : null,
           bio: creatorData.aboutCreator,
+          email: creatorData.email,
+          ...(avatarUrl && { avatar_url: avatarUrl }),
         })
         .eq('id', user.id)
 
@@ -467,6 +576,17 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
           payment_status: 'completed',
           payment_intent_id: paymentData.paymentIntentId,
           payment_completed_at: new Date().toISOString(),
+          transfer_code: generateTransferCode(),
+          transfer_status: 'active',
+          about_work: workData.aboutWork || null,
+          audio_video_url: audioVideoUrl || null,
+          audio_video_type: workData.audioVideoType || null,
+          work_visibility: workData.workStatus,
+          market_price: commProData.marketPrice ? parseFloat(commProData.marketPrice) : null,
+          currency: commProData.currency,
+          royalty_type: commProData.royaltyType === 'none' ? 'none' : commProData.royaltyType,
+          royalty_value: commProData.royaltyType !== 'none' ? parseFloat(commProData.royaltyValue) : null,
+          signature_phone: contextData.signaturePhone || null,
         })
         .select()
         .single()
@@ -505,6 +625,30 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
           qr_code_data: `${window.location.origin}/work/${work.tbt_id}`,
           version: 1,
         })
+
+      // Mint NFT on Solana (non-blocking - don't wait for completion)
+      try {
+        fetch('/api/mint-nft', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+          },
+          body: JSON.stringify({ workId: work.id }),
+        }).then(async (res) => {
+          if (res.ok) {
+            const data = await res.json()
+            console.log('NFT minted successfully:', data.mintAddress)
+          } else {
+            console.warn('NFT mint failed:', await res.text())
+          }
+        }).catch(err => {
+          console.warn('NFT mint error:', err)
+        })
+      } catch (mintError) {
+        console.warn('Error initiating NFT mint:', mintError)
+        // Don't block the flow if NFT minting fails
+      }
 
       // Send SMS notification if user has phone number
       const userPhone = user.phone
@@ -561,8 +705,7 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-tbt-border">
           <div>
-            <h2 className="text-2xl font-display font-bold text-tbt-text">Crear TBT</h2>
-            <p className="text-sm text-tbt-muted">Registra y certifica tu obra en 7 pasos</p>
+            <h2 className="text-2xl font-display font-bold text-tbt-text">TBT | {PHASES.find(p => p.id === phase)?.name}</h2>
           </div>
           <button
             onClick={onClose}
@@ -572,78 +715,13 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
           </button>
         </div>
 
-        {/* Phase Progress - Text only, current in red, others in gray */}
-        <div className="flex items-center justify-center gap-4 px-6 py-4 border-b border-tbt-border overflow-x-auto">
-          {PHASES.map((p, i) => (
-            <div key={p.id} className="flex items-center">
-              <span className={`transition-all ${
-                phase === p.id 
-                  ? 'text-lg font-bold text-red-500' 
-                  : phase > p.id
-                    ? 'text-sm text-tbt-success font-medium'
-                    : 'text-sm text-gray-400'
-              }`}>
-                {p.name}
-              </span>
-              {i < PHASES.length - 1 && (
-                <span className="mx-3 text-gray-300">•</span>
-              )}
-            </div>
-          ))}
-        </div>
+        {/* Phase Progress - Hidden for cleaner UI */}
 
         {/* Content - Scrollable */}
         <div className="flex-1 overflow-y-auto p-6">
           {/* Phase 2: Creator */}
           {phase === 2 && (
             <div className="space-y-4">
-              <div className="text-left mb-4">
-                <h3 className="text-xl font-semibold text-tbt-text">Identidad del Creador</h3>
-              </div>
-
-              {/* Profile Photo Upload */}
-              <div className="flex justify-center mb-4">
-                <div className="relative">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) {
-                        updateCreator({
-                          profilePhoto: file,
-                          profilePhotoPreview: URL.createObjectURL(file)
-                        })
-                      }
-                    }}
-                    className="hidden"
-                    id="profile-photo-upload"
-                  />
-                  <label
-                    htmlFor="profile-photo-upload"
-                    className="cursor-pointer block"
-                  >
-                    {creatorData.profilePhotoPreview ? (
-                      <div className="relative w-24 h-24 rounded-full overflow-hidden border-4 border-tbt-primary/30 hover:border-tbt-primary transition-colors">
-                        <img
-                          src={creatorData.profilePhotoPreview}
-                          alt="Profile"
-                          className="w-full h-full object-cover"
-                        />
-                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                          <Camera className="w-6 h-6 text-white" />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="w-24 h-24 rounded-full bg-tbt-border/50 border-2 border-dashed border-tbt-border flex flex-col items-center justify-center hover:border-tbt-primary/50 transition-colors">
-                        <Camera className="w-6 h-6 text-tbt-muted" />
-                        <span className="text-[10px] text-tbt-muted mt-1">Foto</span>
-                      </div>
-                    )}
-                  </label>
-                </div>
-              </div>
-
               <div>
                 <label className="input-label">Tipo de Creador *</label>
                 <div className="grid grid-cols-3 gap-2">
@@ -673,163 +751,198 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                 </div>
               </div>
 
-              {creatorData.creatorType === 'individual' && (
-                <div>
-                  <label className="input-label">Nombre Legal Completo *</label>
-                  <input
-                    type="text"
-                    value={creatorData.legalName}
-                    onChange={(e) => updateCreator({ legalName: e.target.value })}
-                    placeholder="Tu nombre legal completo"
-                    className="input"
-                  />
+              {/* Layout con campos a la izquierda (2/3) y foto de perfil a la derecha (1/3) */}
+              <div className="flex gap-4">
+                {/* Campos del tipo de creador - 2/3 del ancho */}
+                <div className="w-[66%] space-y-4">
+                  {creatorData.creatorType === 'individual' && (
+                    <>
+                      <div>
+                        <label className="input-label">Nombre Legal Completo</label>
+                        <div className="relative">
+                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
+                          <input
+                            type="text"
+                            value={creatorData.legalName}
+                            onChange={(e) => updateCreator({ legalName: e.target.value })}
+                            placeholder="Tu nombre legal completo"
+                            className="input pl-11"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="input-label">Alias Público *</label>
+                        <div className="relative">
+                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
+                          <input
+                            type="text"
+                            value={creatorData.publicAlias}
+                            onChange={(e) => updateCreator({ publicAlias: e.target.value })}
+                            placeholder="Nombre que aparecerá en el certificado TBT"
+                            className="input pl-11"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {creatorData.creatorType === 'group' && (
+                    <>
+                      <div>
+                        <label className="input-label">Nombre del Colectivo *</label>
+                        <div className="relative">
+                          <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
+                          <input
+                            type="text"
+                            value={creatorData.collectiveName}
+                            onChange={(e) => updateCreator({ collectiveName: e.target.value })}
+                            placeholder="Nombre del grupo o colectivo"
+                            className="input pl-11"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="input-label">Representante Principal</label>
+                        <div className="relative">
+                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
+                          <input
+                            type="text"
+                            value={creatorData.leadRepresentative}
+                            onChange={(e) => updateCreator({ leadRepresentative: e.target.value })}
+                            placeholder="Nombre del representante"
+                            className="input pl-11"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="input-label">Alias Público *</label>
+                        <div className="relative">
+                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
+                          <input
+                            type="text"
+                            value={creatorData.publicAlias}
+                            onChange={(e) => updateCreator({ publicAlias: e.target.value })}
+                            placeholder="Nombre que aparecerá en el certificado TBT"
+                            className="input pl-11"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {creatorData.creatorType === 'corporation' && (
+                    <>
+                      <div>
+                        <label className="input-label">Nombre de la Entidad *</label>
+                        <div className="relative">
+                          <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
+                          <input
+                            type="text"
+                            value={creatorData.entityName}
+                            onChange={(e) => updateCreator({ entityName: e.target.value })}
+                            placeholder="Nombre registrado de la empresa"
+                            className="input pl-11"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="input-label">Título</label>
+                        <div className="relative">
+                          <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
+                          <input
+                            type="text"
+                            value={creatorData.corporateTitle}
+                            onChange={(e) => updateCreator({ corporateTitle: e.target.value })}
+                            placeholder="Tu cargo en la empresa"
+                            className="input pl-11"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="input-label">NIT / Tax ID</label>
+                        <div className="relative">
+                          <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
+                          <input
+                            type="text"
+                            value={creatorData.taxId}
+                            onChange={(e) => updateCreator({ taxId: e.target.value })}
+                            placeholder="Número de identificación tributaria"
+                            className="input pl-11"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="input-label">Alias Público *</label>
+                        <div className="relative">
+                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
+                          <input
+                            type="text"
+                            value={creatorData.publicAlias}
+                            onChange={(e) => updateCreator({ publicAlias: e.target.value })}
+                            placeholder="Nombre que aparecerá en el certificado TBT"
+                            className="input pl-11"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
-              )}
 
-              {creatorData.creatorType === 'group' && (
-                <>
-                  <div>
-                    <label className="input-label">Nombre del Colectivo *</label>
-                    <input
-                      type="text"
-                      value={creatorData.collectiveName}
-                      onChange={(e) => updateCreator({ collectiveName: e.target.value })}
-                      placeholder="Nombre del grupo o colectivo"
-                      className="input"
-                    />
-                  </div>
-                  <div>
-                    <label className="input-label">Representante Principal</label>
-                    <input
-                      type="text"
-                      value={creatorData.leadRepresentative}
-                      onChange={(e) => updateCreator({ leadRepresentative: e.target.value })}
-                      placeholder="Nombre del representante"
-                      className="input"
-                    />
-                  </div>
-                </>
-              )}
-
-              {creatorData.creatorType === 'corporation' && (
-                <>
-                  <div>
-                    <label className="input-label">Nombre de la Entidad *</label>
-                    <input
-                      type="text"
-                      value={creatorData.entityName}
-                      onChange={(e) => updateCreator({ entityName: e.target.value })}
-                      placeholder="Nombre registrado de la empresa"
-                      className="input"
-                    />
-                  </div>
-                  <div>
-                    <label className="input-label">NIT / Tax ID</label>
-                    <input
-                      type="text"
-                      value={creatorData.taxId}
-                      onChange={(e) => updateCreator({ taxId: e.target.value })}
-                      placeholder="Número de identificación tributaria"
-                      className="input"
-                    />
-                  </div>
-                </>
-              )}
-
-              <div>
-                <label className="input-label">Alias Público *</label>
-                <input
-                  type="text"
-                  value={creatorData.publicAlias}
-                  onChange={(e) => updateCreator({ publicAlias: e.target.value })}
-                  placeholder="Nombre que aparecerá en el certificado TBT"
-                  className="input"
-                />
-              </div>
-
-              {/* Redes Sociales */}
-              <div className="pt-4 border-t border-tbt-border/50">
-                <label className="input-label mb-3">Redes Sociales</label>
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <Instagram className="w-5 h-5 text-pink-500" />
-                    <input
-                      type="url"
-                      value={creatorData.socialInstagram}
-                      onChange={(e) => updateCreator({ socialInstagram: e.target.value })}
-                      placeholder="Instagram URL"
-                      className="input flex-1"
-                    />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Facebook className="w-5 h-5 text-blue-600" />
-                    <input
-                      type="url"
-                      value={creatorData.socialFacebook}
-                      onChange={(e) => updateCreator({ socialFacebook: e.target.value })}
-                      placeholder="Facebook URL"
-                      className="input flex-1"
-                    />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Youtube className="w-5 h-5 text-red-600" />
-                    <input
-                      type="url"
-                      value={creatorData.socialYoutube}
-                      onChange={(e) => updateCreator({ socialYoutube: e.target.value })}
-                      placeholder="YouTube URL"
-                      className="input flex-1"
-                    />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Linkedin className="w-5 h-5 text-blue-500" />
-                    <input
-                      type="url"
-                      value={creatorData.socialLinkedin}
-                      onChange={(e) => updateCreator({ socialLinkedin: e.target.value })}
-                      placeholder="LinkedIn URL"
-                      className="input flex-1"
-                    />
-                  </div>
-                  
-                  {/* Otros */}
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => updateCreator({ showOtherSocial: !creatorData.showOtherSocial })}
-                      className={`flex items-center gap-2 text-sm transition-colors ${
-                        creatorData.showOtherSocial ? 'text-tbt-primary' : 'text-tbt-muted hover:text-tbt-text'
-                      }`}
-                    >
-                      <Plus className="w-4 h-4" />
-                      Otros
-                    </button>
-                    {creatorData.showOtherSocial && (
-                      <div className="mt-2 flex items-center gap-3">
-                        <Link2 className="w-5 h-5 text-tbt-muted" />
-                        <input
-                          type="url"
-                          value={creatorData.socialOther}
-                          onChange={(e) => updateCreator({ socialOther: e.target.value })}
-                          placeholder="Otra red social o website"
-                          className="input flex-1"
-                          autoFocus
+                {/* Foto de perfil a la derecha - 1/3 del ancho */}
+                <div className="w-[34%] flex flex-col items-center justify-center">
+                  <label className="input-label text-center mb-2">Foto Perfil</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) {
+                        updateCreator({
+                          profilePhoto: file,
+                          profilePhotoPreview: URL.createObjectURL(file)
+                        })
+                      }
+                    }}
+                    className="hidden"
+                    id="profile-photo-upload"
+                  />
+                  <label
+                    htmlFor="profile-photo-upload"
+                    className="cursor-pointer block"
+                  >
+                    {creatorData.profilePhotoPreview ? (
+                      <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-tbt-primary/30 hover:border-tbt-primary transition-colors">
+                        <img
+                          src={creatorData.profilePhotoPreview}
+                          alt="Profile"
+                          className="w-full h-full object-cover"
                         />
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                          <Camera className="w-6 h-6 text-white" />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="w-28 h-28 rounded-full bg-tbt-border/50 border-2 border-dashed border-tbt-border flex flex-col items-center justify-center hover:border-tbt-primary/50 transition-colors">
+                        <Camera className="w-8 h-8 text-tbt-muted" />
+                        <span className="text-xs text-tbt-muted mt-1">Avatar</span>
                       </div>
                     )}
-                  </div>
+                  </label>
                 </div>
               </div>
 
               <div>
-                <label className="input-label">Website</label>
-                <input
-                  type="url"
-                  value={creatorData.socialWebsite}
-                  onChange={(e) => updateCreator({ socialWebsite: e.target.value })}
-                  placeholder="Website URL"
-                  className="input"
-                />
+                <label className="input-label">Email *</label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
+                  <input
+                    type="email"
+                    value={creatorData.email}
+                    onChange={(e) => updateCreator({ email: e.target.value })}
+                    placeholder="tu@email.com"
+                    className="input pl-11"
+                  />
+                </div>
               </div>
 
               <div>
@@ -841,30 +954,250 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                   className="input min-h-[80px] resize-none"
                 />
               </div>
+
+              <div>
+                <label className="input-label">Website</label>
+                <div className="relative">
+                  <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
+                  <input
+                    type="url"
+                    value={creatorData.socialWebsite}
+                    onChange={(e) => updateCreator({ socialWebsite: e.target.value })}
+                    placeholder="https://tuwebsite.com"
+                    className="input pl-11"
+                  />
+                </div>
+              </div>
+
+              {/* Redes Sociales - Dropdown */}
+              <div className="pt-4 border-t border-tbt-border/50">
+                <label className="input-label mb-3">Redes Sociales</label>
+                <div className="space-y-3">
+                  {/* Dropdown de selección de redes */}
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { key: 'instagram', icon: Instagram, label: 'Instagram', color: 'text-pink-500' },
+                      { key: 'facebook', icon: Facebook, label: 'Facebook', color: 'text-blue-600' },
+                      { key: 'youtube', icon: Youtube, label: 'YouTube', color: 'text-red-600' },
+                      { key: 'linkedin', icon: Linkedin, label: 'LinkedIn', color: 'text-blue-500' },
+                    ].map(({ key, icon: Icon, label, color }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => {
+                          const selected = creatorData.selectedSocials.includes(key)
+                            ? creatorData.selectedSocials.filter(s => s !== key)
+                            : [...creatorData.selectedSocials, key]
+                          updateCreator({ selectedSocials: selected })
+                        }}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+                          creatorData.selectedSocials.includes(key)
+                            ? 'border-tbt-primary bg-tbt-primary/10'
+                            : 'border-tbt-border hover:border-tbt-primary/30'
+                        }`}
+                      >
+                        <Icon className={`w-4 h-4 ${color}`} />
+                        <span className={`text-sm ${creatorData.selectedSocials.includes(key) ? 'text-tbt-text' : 'text-tbt-muted'}`}>
+                          {label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Campos de URL para redes seleccionadas */}
+                  {creatorData.selectedSocials.includes('instagram') && (
+                    <div className="space-y-2">
+                      {creatorData.socialInstagram.map((url, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <Instagram className="w-5 h-5 text-pink-500 flex-shrink-0" />
+                          <input
+                            type="url"
+                            value={url}
+                            onChange={(e) => {
+                              const newUrls = [...creatorData.socialInstagram]
+                              newUrls[index] = e.target.value
+                              updateCreator({ socialInstagram: newUrls })
+                            }}
+                            placeholder="Instagram URL"
+                            className="input flex-1"
+                          />
+                          {creatorData.socialInstagram.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newUrls = creatorData.socialInstagram.filter((_, i) => i !== index)
+                                updateCreator({ socialInstagram: newUrls })
+                              }}
+                              className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-red-500 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                          {index === creatorData.socialInstagram.length - 1 && (
+                            <button
+                              type="button"
+                              onClick={() => updateCreator({ socialInstagram: [...creatorData.socialInstagram, ''] })}
+                              className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-tbt-primary transition-colors"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {creatorData.selectedSocials.includes('facebook') && (
+                    <div className="space-y-2">
+                      {creatorData.socialFacebook.map((url, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <Facebook className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                          <input
+                            type="url"
+                            value={url}
+                            onChange={(e) => {
+                              const newUrls = [...creatorData.socialFacebook]
+                              newUrls[index] = e.target.value
+                              updateCreator({ socialFacebook: newUrls })
+                            }}
+                            placeholder="Facebook URL"
+                            className="input flex-1"
+                          />
+                          {creatorData.socialFacebook.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newUrls = creatorData.socialFacebook.filter((_, i) => i !== index)
+                                updateCreator({ socialFacebook: newUrls })
+                              }}
+                              className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-red-500 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                          {index === creatorData.socialFacebook.length - 1 && (
+                            <button
+                              type="button"
+                              onClick={() => updateCreator({ socialFacebook: [...creatorData.socialFacebook, ''] })}
+                              className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-tbt-primary transition-colors"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {creatorData.selectedSocials.includes('youtube') && (
+                    <div className="space-y-2">
+                      {creatorData.socialYoutube.map((url, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <Youtube className="w-5 h-5 text-red-600 flex-shrink-0" />
+                          <input
+                            type="url"
+                            value={url}
+                            onChange={(e) => {
+                              const newUrls = [...creatorData.socialYoutube]
+                              newUrls[index] = e.target.value
+                              updateCreator({ socialYoutube: newUrls })
+                            }}
+                            placeholder="YouTube URL"
+                            className="input flex-1"
+                          />
+                          {creatorData.socialYoutube.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newUrls = creatorData.socialYoutube.filter((_, i) => i !== index)
+                                updateCreator({ socialYoutube: newUrls })
+                              }}
+                              className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-red-500 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                          {index === creatorData.socialYoutube.length - 1 && (
+                            <button
+                              type="button"
+                              onClick={() => updateCreator({ socialYoutube: [...creatorData.socialYoutube, ''] })}
+                              className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-tbt-primary transition-colors"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {creatorData.selectedSocials.includes('linkedin') && (
+                    <div className="space-y-2">
+                      {creatorData.socialLinkedin.map((url, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <Linkedin className="w-5 h-5 text-blue-500 flex-shrink-0" />
+                          <input
+                            type="url"
+                            value={url}
+                            onChange={(e) => {
+                              const newUrls = [...creatorData.socialLinkedin]
+                              newUrls[index] = e.target.value
+                              updateCreator({ socialLinkedin: newUrls })
+                            }}
+                            placeholder="LinkedIn URL"
+                            className="input flex-1"
+                          />
+                          {creatorData.socialLinkedin.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newUrls = creatorData.socialLinkedin.filter((_, i) => i !== index)
+                                updateCreator({ socialLinkedin: newUrls })
+                              }}
+                              className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-red-500 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                          {index === creatorData.socialLinkedin.length - 1 && (
+                            <button
+                              type="button"
+                              onClick={() => updateCreator({ socialLinkedin: [...creatorData.socialLinkedin, ''] })}
+                              className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-tbt-primary transition-colors"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
           {/* Phase 3: La Obra */}
           {phase === 3 && (
             <div className="space-y-4">
-              <div className="text-left mb-4">
-                <h3 className="text-xl font-semibold text-tbt-text">La Obra</h3>
-              </div>
 
               <div>
-                <label className="input-label">Título Oficial *</label>
+                <label className="input-label flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  Nombre De La Obra *
+                </label>
                 <input
                   type="text"
                   value={workData.title}
                   onChange={(e) => updateWork({ title: e.target.value })}
-                  placeholder="El nombre de tu obra"
+                  placeholder="El nombre de la obra"
                   className="input"
                 />
               </div>
 
               <div className="grid sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="input-label">Categoría *</label>
+                  <label className="input-label flex items-center gap-2">
+                    <Layers className="w-4 h-4" />
+                    Categoría *
+                  </label>
                   <select
                     value={workData.category}
                     onChange={(e) => updateWork({ category: e.target.value })}
@@ -877,7 +1210,10 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                   </select>
                 </div>
                 <div>
-                  <label className="input-label">Material Principal</label>
+                  <label className="input-label flex items-center gap-2">
+                    <Palette className="w-4 h-4" />
+                    Material Principal
+                  </label>
                   <input
                     type="text"
                     value={workData.primaryMaterial}
@@ -905,7 +1241,10 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                   </div>
                 </div>
                 <div>
-                  <label className="input-label">Estado de la Obra</label>
+                  <label className="input-label flex items-center gap-2">
+                    <Eye className="w-4 h-4" />
+                    Estado de la Obra
+                  </label>
                   <div className="space-y-2 mt-2">
                     {[
                       { value: 'publicado', label: 'Publicado' },
@@ -941,28 +1280,53 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
               <div>
                 <label className="input-label flex items-center gap-2">
                   <LinkIcon className="w-4 h-4" />
-                  Links de Assets (opcional)
+                  Links de Referencia (opcional)
                 </label>
                 <div className="space-y-2">
                   {workData.assetLinks.map((link, i) => (
-                    <input
-                      key={i}
-                      type="url"
-                      value={link}
-                      onChange={(e) => {
-                        const newLinks = [...workData.assetLinks]
-                        newLinks[i] = e.target.value
-                        updateWork({ assetLinks: newLinks })
-                      }}
-                      placeholder={`Link ${i + 1} (YouTube, IPFS, Drive...)`}
-                      className="input"
-                    />
+                    <div key={i} className="flex items-center gap-2">
+                      <input
+                        type="url"
+                        value={link}
+                        onChange={(e) => {
+                          const newLinks = [...workData.assetLinks]
+                          newLinks[i] = e.target.value
+                          updateWork({ assetLinks: newLinks })
+                        }}
+                        placeholder={`Link ${i + 1} (YouTube, IPFS, Drive...)`}
+                        className="input flex-1"
+                      />
+                      {workData.assetLinks.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newLinks = workData.assetLinks.filter((_, index) => index !== i)
+                            updateWork({ assetLinks: newLinks })
+                          }}
+                          className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-red-500 transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                      {i === workData.assetLinks.length - 1 && (
+                        <button
+                          type="button"
+                          onClick={() => updateWork({ assetLinks: [...workData.assetLinks, ''] })}
+                          className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-tbt-primary transition-colors"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
 
               <div>
-                <label className="input-label">Sobre la Obra</label>
+                <label className="input-label flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  Sobre la Obra
+                </label>
                 <textarea
                   value={workData.aboutWork}
                   onChange={(e) => updateWork({ aboutWork: e.target.value })}
@@ -973,8 +1337,44 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
 
               {/* Media Section - Clean Card Design */}
               <div className="bg-tbt-bg/30 rounded-2xl p-4 border border-tbt-border/30">
-                {/* Audio/Video */}
+                {/* Image - First */}
                 <div className="mb-4">
+                  <p className="text-sm text-tbt-muted mb-3">Imagen Principal</p>
+                  <input
+                    type="file"
+                    accept={ALLOWED_IMAGE_EXTENSIONS}
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    id="media-upload"
+                  />
+                  {workData.mediaPreview ? (
+                    <div className="relative w-full">
+                      <img 
+                        src={workData.mediaPreview} 
+                        alt="Preview" 
+                        className="w-full max-w-md mx-auto aspect-[4/3] rounded-xl object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => updateWork({ mediaFile: null, mediaPreview: '' })}
+                        className="absolute top-3 right-3 w-8 h-8 rounded-full bg-tbt-bg/80 backdrop-blur-sm flex items-center justify-center hover:bg-red-500 transition-colors"
+                      >
+                        <X className="w-4 h-4 text-tbt-text" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label
+                      htmlFor="media-upload"
+                      className="w-full max-w-md mx-auto aspect-[4/3] bg-tbt-border/30 rounded-xl hover:bg-tbt-border/50 transition-colors flex flex-col items-center justify-center cursor-pointer border-2 border-dashed border-tbt-border"
+                    >
+                      <Camera className="w-8 h-8 text-tbt-muted mb-2" />
+                      <span className="text-sm text-tbt-muted">Sube una imagen</span>
+                    </label>
+                  )}
+                </div>
+
+                {/* Audio/Video - After Image */}
+                <div className="pt-3 border-t border-tbt-border/20">
                   <p className="text-sm text-tbt-muted mb-3">Cuenta sobre tu obra</p>
                   
                   <input
@@ -1071,42 +1471,6 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                   )}
                   <p className="text-xs text-tbt-muted/60 mt-2 text-center">máx 23 seg</p>
                 </div>
-
-                {/* Image - Centered Below */}
-                <div className="flex flex-col pt-3 border-t border-tbt-border/20">
-                  <p className="text-sm text-tbt-muted mb-3">Imagen</p>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                    id="media-upload"
-                  />
-                  {workData.mediaPreview ? (
-                    <div className="relative w-full">
-                      <img 
-                        src={workData.mediaPreview} 
-                        alt="Preview" 
-                        className="w-full max-w-md mx-auto aspect-[4/3] rounded-xl object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => updateWork({ mediaFile: null, mediaPreview: '' })}
-                        className="absolute top-3 right-3 w-8 h-8 rounded-full bg-tbt-bg/80 backdrop-blur-sm flex items-center justify-center hover:bg-red-500 transition-colors"
-                      >
-                        <X className="w-4 h-4 text-tbt-text" />
-                      </button>
-                    </div>
-                  ) : (
-                    <label
-                      htmlFor="media-upload"
-                      className="w-full max-w-md mx-auto aspect-[4/3] bg-tbt-border/30 rounded-xl hover:bg-tbt-border/50 transition-colors flex flex-col items-center justify-center cursor-pointer border-2 border-dashed border-tbt-border"
-                    >
-                      <Camera className="w-8 h-8 text-tbt-muted mb-2" />
-                      <span className="text-sm text-tbt-muted">Sube una imagen</span>
-                    </label>
-                  )}
-                </div>
               </div>
             </div>
           )}
@@ -1114,9 +1478,6 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
           {/* Phase 4: CommPro - Simplified */}
           {phase === 4 && (
             <div className="space-y-4">
-              <div className="text-left mb-4">
-                <h3 className="text-xl font-semibold text-tbt-text">CommPro</h3>
-              </div>
 
               <div className="p-4 rounded-xl bg-tbt-bg">
                 <h4 className="font-medium text-tbt-text mb-3 flex items-center gap-2">
@@ -1152,10 +1513,86 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                 </div>
               </div>
 
+              {/* Royalty Architecture */}
+              <div className="p-4 rounded-xl bg-tbt-bg">
+                <h4 className="font-medium text-tbt-text mb-3 flex items-center gap-2">
+                  <CreditCard className="w-5 h-5 text-tbt-primary" />
+                  Royalty Architecture
+                </h4>
+                
+                {/* Royalty Type Toggle */}
+                <div className="mb-4">
+                  <label className="input-label mb-2">Tipo de Royalty</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { value: 'none', label: 'Ninguno' },
+                      { value: 'percentage', label: 'Porcentaje' },
+                      { value: 'fixed', label: 'Monto Fijo' },
+                    ].map(({ value, label }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => updateCommPro({ royaltyType: value as typeof commProData.royaltyType })}
+                        className={`p-3 rounded-xl border-2 transition-all text-sm ${
+                          commProData.royaltyType === value
+                            ? 'border-tbt-primary bg-tbt-primary/10 text-tbt-text'
+                            : 'border-tbt-border hover:border-tbt-primary/30 text-tbt-muted'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Royalty Value - Only show if not 'none' */}
+                {commProData.royaltyType !== 'none' && (
+                  <div>
+                    <label className="input-label">
+                      {commProData.royaltyType === 'percentage' 
+                        ? 'Porcentaje de Royalty (0-100%)' 
+                        : `Monto Fijo de Royalty (${commProData.currency})`
+                      }
+                    </label>
+                    <div className="relative">
+                      {commProData.royaltyType === 'percentage' ? (
+                        <>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={commProData.royaltyValue}
+                            onChange={(e) => {
+                              const val = Math.min(100, Math.max(0, Number(e.target.value)))
+                              updateCommPro({ royaltyValue: String(val) })
+                            }}
+                            placeholder="10"
+                            className="input pr-8"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-tbt-muted">%</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-tbt-muted">$</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={commProData.royaltyValue}
+                            onChange={(e) => updateCommPro({ royaltyValue: e.target.value })}
+                            placeholder="0.00"
+                            className="input pl-8"
+                          />
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="p-4 rounded-xl bg-tbt-bg">
                 <h4 className="font-medium text-tbt-text mb-3 flex items-center gap-2">
                   <Shield className="w-5 h-5 text-tbt-primary" />
-                  Escaneo de Protección
+                  Scaneo de Plagio
                 </h4>
 
                 {commProData.scanStatus === 'pending' && (
@@ -1275,28 +1712,70 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                   </div>
 
                   <div>
-                    <label className="input-label">Resumen de Contexto (editable)</label>
+                    <label className="input-label">Resumen de Contexto {contextData.isSigned ? '(Bloqueado)' : '(editable)'}</label>
                     <textarea
                       value={contextData.userEditedSummary}
                       onChange={(e) => updateContext({ userEditedSummary: e.target.value })}
                       className="input min-h-[150px] resize-none text-sm"
+                      disabled={contextData.isSigned}
                     />
                   </div>
 
-                  <label className="flex items-center gap-3 p-3 rounded-xl border border-tbt-gold/30 bg-tbt-gold/5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={contextData.isSigned}
-                      onChange={(e) => updateContext({ isSigned: e.target.checked })}
-                      className="w-5 h-5 rounded text-tbt-gold"
-                    />
-                    <div>
-                      <p className="font-medium text-tbt-text text-sm">Firmar y Bloquear Contexto</p>
-                      <p className="text-xs text-tbt-muted">
-                        Confirmo que toda la información es correcta
-                      </p>
-                    </div>
-                  </label>
+                  {/* Firma Digital Section */}
+                  <div className="p-4 rounded-xl border border-tbt-gold/30 bg-tbt-gold/5">
+                    <h4 className="font-medium text-tbt-text mb-3 flex items-center gap-2">
+                      <Shield className="w-5 h-5 text-tbt-gold" />
+                      Firmar y Bloquear Contexto
+                    </h4>
+                    
+                    {!contextData.isSigned ? (
+                      <>
+                        <p className="text-sm text-tbt-muted mb-4">
+                          Agrega tu número de teléfono para generar tu firma digital. Después de firmar, no podrás editar el contexto.
+                        </p>
+                        
+                        <div className="mb-4">
+                          <label className="input-label">Número de Teléfono *</label>
+                          <PhoneInput
+                            value={contextData.signaturePhone}
+                            onChange={(value) => updateContext({ signaturePhone: value })}
+                            placeholder="Número de teléfono"
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (contextData.signaturePhone.trim()) {
+                              updateContext({ isSigned: true })
+                            }
+                          }}
+                          disabled={!contextData.signaturePhone.trim()}
+                          className={`w-full py-3 rounded-xl font-medium transition-all ${
+                            contextData.signaturePhone.trim()
+                              ? 'bg-tbt-gold text-black hover:bg-tbt-gold/90'
+                              : 'bg-tbt-border text-tbt-muted cursor-not-allowed'
+                          }`}
+                        >
+                          <Check className="w-5 h-5 inline mr-2" />
+                          Firmar y Bloquear
+                        </button>
+                      </>
+                    ) : (
+                      <div className="text-center py-4">
+                        <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-tbt-gold/20 flex items-center justify-center">
+                          <Check className="w-8 h-8 text-tbt-gold" />
+                        </div>
+                        <p className="font-medium text-tbt-text mb-1">Contexto Firmado</p>
+                        <p className="text-sm text-tbt-muted">
+                          Firmado con: {contextData.signaturePhone}
+                        </p>
+                        <p className="text-xs text-tbt-muted mt-2">
+                          El contexto ha sido bloqueado y no puede ser editado.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
             </div>
@@ -1305,10 +1784,7 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
           {/* Phase 6: Payment */}
           {phase === 6 && (
             <div className="space-y-4">
-              <div className="text-left mb-4">
-                <h3 className="text-xl font-semibold text-tbt-text">Pago TBT</h3>
-              </div>
-
+             
               <div className="text-center py-6">
                 <div className="w-16 h-16 rounded-full bg-tbt-gold/20 flex items-center justify-center mx-auto mb-4">
                   <CreditCard className="w-8 h-8 text-tbt-gold" />
@@ -1347,10 +1823,6 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
           {/* Phase 7: Delivery */}
           {phase === 7 && (
             <div className="space-y-4">
-              <div className="text-left mb-4">
-                <h3 className="text-xl font-semibold text-tbt-text">Entrega Final</h3>
-              </div>
-
               <div className="text-center py-6">
                 <div className="w-16 h-16 rounded-full bg-tbt-success/20 flex items-center justify-center mx-auto mb-4">
                   <Send className="w-8 h-8 text-tbt-success" />

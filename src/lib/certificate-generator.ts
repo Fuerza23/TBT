@@ -1,4 +1,6 @@
-// Generador de certificados en canvas para descarga
+// Generador de certificados TBT - GIF Animado
+// Diseño magenta/negro con código animado
+import GIF from 'gif.js'
 import QRCode from 'qrcode'
 
 interface CertificateData {
@@ -7,163 +9,345 @@ interface CertificateData {
   creatorName: string
   ownerName: string
   certifiedAt: string
+  value?: string
+  currency?: string
   royalty: string
   verificationUrl: string
   mediaUrl?: string
 }
 
-export async function generateCertificateImage(data: CertificateData): Promise<Blob> {
-  // Crear canvas
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')!
+// Colores del diseño
+const COLORS = {
+  background: '#0a0a0a',
+  magenta: '#e91e8c',
+  white: '#ffffff',
+  gray: '#888888',
+  lightGray: '#cccccc',
+}
+
+// Función para dibujar el logo TBT con arcoíris
+function drawTBTLogo(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  const colors = ['#ff0000', '#ff7f00', '#ffff00', '#00ff00', '#0000ff', '#4b0082', '#9400d3']
   
-  // Dimensiones del certificado (A4 landscape en pixels a 150 DPI)
-  canvas.width = 1754
-  canvas.height = 1240
-  
-  // Fondo con gradiente
-  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height)
-  gradient.addColorStop(0, '#0a0a0f')
-  gradient.addColorStop(0.5, '#12121a')
-  gradient.addColorStop(1, '#0a0a0f')
-  ctx.fillStyle = gradient
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-  
-  // Patrón decorativo (borde dorado)
-  ctx.strokeStyle = 'rgba(212, 175, 55, 0.3)'
-  ctx.lineWidth = 4
-  ctx.strokeRect(40, 40, canvas.width - 80, canvas.height - 80)
-  
-  ctx.strokeStyle = 'rgba(212, 175, 55, 0.15)'
-  ctx.lineWidth = 2
-  ctx.strokeRect(60, 60, canvas.width - 120, canvas.height - 120)
-  
-  // Título del certificado
-  ctx.fillStyle = '#d4af37'
-  ctx.font = 'bold 28px Georgia, serif'
+  ctx.font = `bold ${size}px Arial, sans-serif`
   ctx.textAlign = 'center'
-  ctx.fillText('✦ CERTIFICADO DE AUTENTICIDAD ✦', canvas.width / 2, 130)
+  ctx.textBaseline = 'middle'
   
-  // Línea decorativa
-  ctx.strokeStyle = 'rgba(212, 175, 55, 0.5)'
+  // Gradiente de texto arcoíris
+  const gradient = ctx.createLinearGradient(x - 60, y, x + 60, y)
+  colors.forEach((color, i) => {
+    gradient.addColorStop(i / (colors.length - 1), color)
+  })
+  
+  ctx.fillStyle = gradient
+  ctx.fillText('TBT', x, y)
+}
+
+// Función para dibujar cuadro de dígito
+function drawDigitBox(
+  ctx: CanvasRenderingContext2D, 
+  x: number, 
+  y: number, 
+  digit: string, 
+  visible: boolean = true
+) {
+  const boxSize = 42
+  const padding = 4
+  
+  // Fondo del cuadro
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.1)'
+  ctx.fillRect(x, y, boxSize, boxSize)
+  
+  // Borde
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
   ctx.lineWidth = 1
+  ctx.strokeRect(x, y, boxSize, boxSize)
+  
+  // Dígito
+  if (visible && digit) {
+    ctx.fillStyle = COLORS.white
+    ctx.font = 'bold 28px "Courier New", monospace'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(digit, x + boxSize / 2, y + boxSize / 2)
+  }
+}
+
+// Función para dibujar QR circular con puntos
+async function drawCircularQR(
+  ctx: CanvasRenderingContext2D, 
+  url: string, 
+  centerX: number, 
+  centerY: number, 
+  radius: number
+) {
+  // Fondo circular blanco
   ctx.beginPath()
-  ctx.moveTo(canvas.width / 2 - 200, 160)
-  ctx.lineTo(canvas.width / 2 + 200, 160)
-  ctx.stroke()
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2)
+  ctx.fillStyle = COLORS.white
+  ctx.fill()
   
-  // TBT ID
-  ctx.fillStyle = '#e94560'
-  ctx.font = 'bold 42px "Courier New", monospace'
-  ctx.fillText(data.tbtId, canvas.width / 2, 230)
-  
-  // Título de la obra
-  ctx.fillStyle = '#f0f0f5'
-  ctx.font = 'italic 48px Georgia, serif'
-  ctx.fillText(`"${data.title}"`, canvas.width / 2, 320)
-  
-  // Creador
-  ctx.fillStyle = '#8888a0'
-  ctx.font = '24px Arial, sans-serif'
-  ctx.fillText(`Creado por`, canvas.width / 2, 380)
-  ctx.fillStyle = '#f0f0f5'
-  ctx.font = 'bold 32px Arial, sans-serif'
-  ctx.fillText(data.creatorName, canvas.width / 2, 420)
-  
-  // Separador
-  ctx.strokeStyle = 'rgba(136, 136, 160, 0.3)'
-  ctx.beginPath()
-  ctx.moveTo(200, 470)
-  ctx.lineTo(canvas.width - 200, 470)
-  ctx.stroke()
-  
-  // Información en dos columnas
-  const leftX = 400
-  const rightX = canvas.width - 400
-  let y = 540
-  
-  // Propietario actual
-  ctx.textAlign = 'left'
-  ctx.fillStyle = '#8888a0'
-  ctx.font = '20px Arial, sans-serif'
-  ctx.fillText('PROPIETARIO ACTUAL', leftX - 150, y)
-  ctx.fillStyle = '#f0f0f5'
-  ctx.font = 'bold 26px Arial, sans-serif'
-  ctx.fillText(data.ownerName, leftX - 150, y + 35)
-  
-  // Fecha de certificación
-  ctx.textAlign = 'right'
-  ctx.fillStyle = '#8888a0'
-  ctx.font = '20px Arial, sans-serif'
-  ctx.fillText('FECHA DE CERTIFICACIÓN', rightX + 150, y)
-  ctx.fillStyle = '#f0f0f5'
-  ctx.font = 'bold 26px Arial, sans-serif'
-  ctx.fillText(data.certifiedAt, rightX + 150, y + 35)
-  
-  y += 100
-  
-  // Regalía
-  ctx.textAlign = 'left'
-  ctx.fillStyle = '#8888a0'
-  ctx.font = '20px Arial, sans-serif'
-  ctx.fillText('REGALÍA DEL ARTISTA', leftX - 150, y)
-  ctx.fillStyle = '#d4af37'
-  ctx.font = 'bold 26px Arial, sans-serif'
-  ctx.fillText(data.royalty, leftX - 150, y + 35)
-  
-  // Generar QR Code
+  // Generar QR data
   try {
-    const qrDataUrl = await QRCode.toDataURL(data.verificationUrl, {
-      width: 180,
+    const qrCanvas = document.createElement('canvas')
+    await QRCode.toCanvas(qrCanvas, url, {
+      width: radius * 1.6,
       margin: 1,
-      color: {
-        dark: '#1a1a2e',
-        light: '#ffffff',
-      },
+      color: { dark: COLORS.magenta, light: '#ffffff' }
     })
     
-    const qrImage = new Image()
-    await new Promise((resolve, reject) => {
-      qrImage.onload = resolve
-      qrImage.onerror = reject
-      qrImage.src = qrDataUrl
-    })
-    
-    // Fondo blanco para el QR
-    ctx.fillStyle = '#ffffff'
-    ctx.roundRect(canvas.width / 2 - 100, 750, 200, 200, 10)
-    ctx.fill()
-    
-    // Dibujar QR
-    ctx.drawImage(qrImage, canvas.width / 2 - 90, 760, 180, 180)
+    // Dibujar QR dentro del círculo
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, radius - 5, 0, Math.PI * 2)
+    ctx.clip()
+    ctx.drawImage(
+      qrCanvas, 
+      centerX - radius + 10, 
+      centerY - radius + 10, 
+      (radius - 10) * 2, 
+      (radius - 10) * 2
+    )
+    ctx.restore()
   } catch (e) {
     console.error('Error generating QR:', e)
   }
+}
+
+// Función para dibujar patrón de ondas
+function drawWavePattern(
+  ctx: CanvasRenderingContext2D, 
+  x: number, 
+  y: number, 
+  width: number, 
+  height: number
+) {
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
+  ctx.lineWidth = 1
   
-  // URL de verificación
+  for (let row = 0; row < height; row += 8) {
+    ctx.beginPath()
+    for (let col = 0; col < width; col += 2) {
+      const waveY = y + row + Math.sin((col + row) * 0.1) * 3
+      if (col === 0) {
+        ctx.moveTo(x + col, waveY)
+      } else {
+        ctx.lineTo(x + col, waveY)
+      }
+    }
+    ctx.stroke()
+  }
+}
+
+// Función principal para generar un frame del certificado
+async function drawCertificateFrame(
+  canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D,
+  data: CertificateData,
+  visibleDigits: number
+): Promise<void> {
+  const width = canvas.width
+  const height = canvas.height
+  
+  // Limpiar canvas
+  ctx.clearRect(0, 0, width, height)
+  
+  // Fondo negro
+  ctx.fillStyle = COLORS.background
+  ctx.fillRect(0, 0, width, height)
+  
+  // Borde magenta
+  ctx.strokeStyle = COLORS.magenta
+  ctx.lineWidth = 4
+  ctx.strokeRect(2, 2, width - 4, height - 4)
+  
+  // Patrón de fondo sutil
+  ctx.globalAlpha = 0.05
+  for (let i = 0; i < width; i += 30) {
+    for (let j = 0; j < height; j += 30) {
+      ctx.fillStyle = COLORS.white
+      ctx.fillRect(i, j, 15, 15)
+    }
+  }
+  ctx.globalAlpha = 1
+  
+  // Logo TBT
+  drawTBTLogo(ctx, width / 2, 50, 48)
+  
+  // Código TBT en cuadros
+  const digits = data.tbtId.split('')
+  const boxWidth = 42
+  const totalWidth = digits.length * (boxWidth + 6) - 6
+  const startX = (width - totalWidth) / 2
+  
+  digits.forEach((digit, index) => {
+    const x = startX + index * (boxWidth + 6)
+    drawDigitBox(ctx, x, 90, digit, index < visibleDigits)
+  })
+  
+  // QR Circular
+  await drawCircularQR(ctx, data.verificationUrl, width / 2, 220, 60)
+  
+  // Título de la obra
+  ctx.fillStyle = COLORS.white
+  ctx.font = 'bold 22px Arial, sans-serif'
   ctx.textAlign = 'center'
-  ctx.fillStyle = '#8888a0'
-  ctx.font = '18px Arial, sans-serif'
-  ctx.fillText('Verificar autenticidad en:', canvas.width / 2, 990)
-  ctx.fillStyle = '#e94560'
-  ctx.font = '22px "Courier New", monospace'
-  ctx.fillText(data.verificationUrl, canvas.width / 2, 1020)
+  ctx.fillText(data.title.toUpperCase(), width / 2, 320)
   
-  // Footer
-  ctx.fillStyle = 'rgba(136, 136, 160, 0.5)'
-  ctx.font = '16px Arial, sans-serif'
-  ctx.fillText('Este certificado garantiza la autenticidad y trazabilidad de la obra mediante tecnología blockchain.', canvas.width / 2, 1100)
-  ctx.fillText('TBT - Tokens Transferibles Facturables | Transbit × BROCHA', canvas.width / 2, 1130)
+  // Separador
+  ctx.beginPath()
+  ctx.moveTo(20, 350)
+  ctx.lineTo(width - 20, 350)
+  ctx.strokeStyle = COLORS.magenta
+  ctx.lineWidth = 2
+  ctx.stroke()
   
-  // Logos/marcas de agua en esquinas
-  ctx.fillStyle = 'rgba(212, 175, 55, 0.1)'
-  ctx.font = 'bold 60px Georgia, serif'
+  // Información - Fondo
+  ctx.fillStyle = 'rgba(30, 30, 30, 0.8)'
+  ctx.fillRect(20, 360, width - 40, 180)
+  
+  // Borde izquierdo magenta
+  ctx.fillStyle = COLORS.magenta
+  ctx.fillRect(20, 360, 4, 180)
+  
+  // Cuadro magenta pequeño
+  ctx.fillRect(width - 40, 360 + 90, 12, 12)
+  
+  // Información del certificado
+  const infoX = 40
+  let infoY = 390
+  const lineHeight = 40
+  
+  // Creator
+  ctx.fillStyle = COLORS.gray
+  ctx.font = '12px Arial, sans-serif'
   ctx.textAlign = 'left'
-  ctx.fillText('TBT', 80, 1180)
-  ctx.textAlign = 'right'
-  ctx.fillText('TBT', canvas.width - 80, 1180)
+  ctx.fillText('Creator:', infoX, infoY)
+  ctx.fillStyle = COLORS.white
+  ctx.font = 'bold 16px Arial, sans-serif'
+  ctx.fillText(data.creatorName.toUpperCase(), infoX, infoY + 18)
   
-  // Convertir a Blob
+  infoY += lineHeight
+  
+  // Owner ID
+  ctx.fillStyle = COLORS.gray
+  ctx.font = '12px Arial, sans-serif'
+  ctx.fillText('Owner ID:', infoX, infoY)
+  ctx.fillStyle = COLORS.white
+  ctx.font = 'bold 16px Arial, sans-serif'
+  ctx.fillText(data.ownerName.toUpperCase(), infoX, infoY + 18)
+  
+  infoY += lineHeight
+  
+  // Value
+  ctx.fillStyle = COLORS.gray
+  ctx.font = '12px Arial, sans-serif'
+  ctx.fillText('Value:', infoX, infoY)
+  ctx.fillStyle = COLORS.white
+  ctx.font = 'bold 16px Arial, sans-serif'
+  const valueText = data.value ? `${data.value} ${data.currency || 'USD'}` : 'N/A'
+  ctx.fillText(valueText, infoX, infoY + 18)
+  
+  infoY += lineHeight
+  
+  // Date
+  ctx.fillStyle = COLORS.gray
+  ctx.font = '12px Arial, sans-serif'
+  ctx.fillText('Date:', infoX, infoY)
+  ctx.fillStyle = COLORS.white
+  ctx.font = 'bold 16px Arial, sans-serif'
+  ctx.fillText(data.certifiedAt, infoX, infoY + 18)
+  
+  // Patrón de ondas
+  drawWavePattern(ctx, 20, 560, width - 40, 50)
+  
+  // Número animado en círculo
+  const circleRadius = 25
+  ctx.beginPath()
+  ctx.arc(width / 2, 620, circleRadius, 0, Math.PI * 2)
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.1)'
+  ctx.fill()
+  ctx.strokeStyle = COLORS.white
+  ctx.lineWidth = 2
+  ctx.stroke()
+  
+  // Número dentro del círculo (primer dígito del TBT)
+  ctx.fillStyle = COLORS.white
+  ctx.font = 'bold 24px Arial, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(data.tbtId.charAt(0), width / 2, 620)
+  
+  // Footer con logos
+  ctx.fillStyle = COLORS.white
+  ctx.font = 'bold 14px Arial, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.fillText('TRANSBIT', width / 2 - 60, 680)
+  ctx.fillText('×', width / 2, 680)
+  ctx.fillText('BROCHA', width / 2 + 60, 680)
+  
+  // Línea inferior
+  ctx.beginPath()
+  ctx.moveTo(width / 4, 700)
+  ctx.lineTo(width * 3 / 4, 700)
+  ctx.strokeStyle = COLORS.magenta
+  ctx.lineWidth = 1
+  ctx.stroke()
+}
+
+// Generar GIF animado
+export async function generateCertificateGIF(data: CertificateData): Promise<Blob> {
+  return new Promise(async (resolve, reject) => {
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')!
+    
+    // Dimensiones del certificado (vertical, móvil)
+    canvas.width = 350
+    canvas.height = 720
+    
+    const digits = data.tbtId.split('')
+    const totalFrames = digits.length + 3 // Frames para cada dígito + frames finales
+    
+    const gif = new GIF({
+      workers: 2,
+      quality: 10,
+      width: canvas.width,
+      height: canvas.height,
+      workerScript: '/gif.worker.js'
+    })
+    
+    // Generar frames
+    for (let frame = 0; frame <= totalFrames; frame++) {
+      const visibleDigits = Math.min(frame, digits.length)
+      await drawCertificateFrame(canvas, ctx, data, visibleDigits)
+      
+      // Delay más largo para el último frame
+      const delay = frame === totalFrames ? 2000 : 150
+      gif.addFrame(ctx, { copy: true, delay })
+    }
+    
+    gif.on('finished', (blob: Blob) => {
+      resolve(blob)
+    })
+    
+    gif.on('error', (error: Error) => {
+      reject(error)
+    })
+    
+    gif.render()
+  })
+}
+
+// Generar imagen estática PNG (para compatibilidad)
+export async function generateCertificateImage(data: CertificateData): Promise<Blob> {
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')!
+  
+  canvas.width = 350
+  canvas.height = 720
+  
+  await drawCertificateFrame(canvas, ctx, data, data.tbtId.length)
+  
   return new Promise((resolve) => {
     canvas.toBlob((blob) => {
       resolve(blob!)

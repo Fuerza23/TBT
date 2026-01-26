@@ -10,7 +10,7 @@ export async function middleware(req: NextRequest) {
   const { data: { session } } = await supabase.auth.getSession()
 
   // Rutas protegidas
-  const protectedRoutes = ['/dashboard', '/crear', '/perfil']
+  const protectedRoutes = ['/mis-tbts', '/transferir', '/perfil']
   const isProtectedRoute = protectedRoutes.some(route => 
     req.nextUrl.pathname.startsWith(route)
   )
@@ -22,14 +22,14 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(redirectUrl)
   }
 
-  // Si está autenticado y va a login/registro, redirigir a dashboard
-  const authRoutes = ['/login', '/registro']
+  // Si está autenticado y va a login, redirigir a mis-tbts
+  const authRoutes = ['/login']
   const isAuthRoute = authRoutes.some(route => 
     req.nextUrl.pathname === route
   )
 
   if (isAuthRoute && session) {
-    return NextResponse.redirect(new URL('/dashboard', req.url))
+    return NextResponse.redirect(new URL('/mis-tbts', req.url))
   }
 
   return res
@@ -37,10 +37,9 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    '/dashboard/:path*',
-    '/crear/:path*',
+    '/mis-tbts/:path*',
+    '/transferir/:path*',
     '/perfil/:path*',
     '/login',
-    '/registro',
   ],
 }

@@ -81,30 +81,20 @@ export default function LoginPage() {
         const { error } = await supabase.auth.signInWithOtp({
           email,
           options: {
-            shouldCreateUser: false,
+            shouldCreateUser: true,
             emailRedirectTo: `${window.location.origin}/auth/callback`,
           },
         })
-        if (error) {
-          if (error.message.includes('Signups not allowed') || error.message.includes('User not found')) {
-            throw new Error('Este email no está registrado. Por favor regístrate primero.')
-          }
-          throw error
-        }
+        if (error) throw error
       } else {
         const fullPhone = getFullPhoneNumber()
         const { error } = await supabase.auth.signInWithOtp({
           phone: fullPhone,
           options: {
-            shouldCreateUser: false,
+            shouldCreateUser: true,
           },
         })
-        if (error) {
-          if (error.message.includes('Signups not allowed') || error.message.includes('User not found')) {
-            throw new Error('Este número no está registrado. Por favor regístrate primero.')
-          }
-          throw error
-        }
+        if (error) throw error
       }
       
       setStep('verify')
@@ -133,7 +123,7 @@ export default function LoginPage() {
         })
 
         if (!error && data.session) {
-          router.push('/dashboard')
+          router.push('/mis-tbts')
           router.refresh()
           return
         }
@@ -170,7 +160,7 @@ export default function LoginPage() {
         }
 
         if (data.session) {
-          router.push('/dashboard')
+          router.push('/mis-tbts')
           router.refresh()
         }
       }
@@ -191,10 +181,10 @@ export default function LoginPage() {
           <div className="text-center mb-8 animate-in">
             <Logo size="lg" />
             <h1 className="text-2xl sm:text-3xl font-display font-bold text-tbt-text mt-6 mb-2">
-              Bienvenido de vuelta
+              Bienvenido a TBT
             </h1>
             <p className="text-tbt-muted">
-              Ingresa con tu email o teléfono
+              Ingresa o regístrate con tu email o teléfono
             </p>
           </div>
 
@@ -424,12 +414,7 @@ export default function LoginPage() {
             )}
           </div>
 
-          <p className="text-center text-sm text-tbt-muted mt-6 animate-in-delay-2">
-            ¿No tienes cuenta?{' '}
-            <Link href="/registro" className="text-tbt-primary hover:underline">
-              Regístrate
-            </Link>
-          </p>
+
 
         </div>
       </main>
