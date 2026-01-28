@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { countryToLocale, defaultLocale, type Locale } from '@/i18n/config'
+import { countryToLocale, defaultLocale } from '@/i18n/config'
+
+// Required for Vercel: this route uses request.headers and cannot be statically rendered
+export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
