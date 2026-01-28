@@ -19,12 +19,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get work with creator info
+    // Get work with creator info, context, and commerce data
     const { data: work, error: workError } = await supabase
       .from('works')
       .select(`
         *,
-        creator:profiles!works_creator_id_fkey(display_name)
+        creator:profiles!works_creator_id_fkey(display_name, public_alias),
+        context:context_snapshots(location_name, weather_data, elaboration_type),
+        commerce:work_commerce(initial_price, currency, royalty_type, royalty_value)
       `)
       .eq('id', workId)
       .single()
@@ -78,17 +80,44 @@ export async function POST(request: NextRequest) {
       console.log(`Created wallet for user ${user.id}: ${publicKey}`)
     }
 
-    // Prepare work data for NFT
+    // Get creator name (prefer public_alias)
+    const creatorData = work.creator as any
+    const creatorName = creatorData?.public_alias || creatorData?.display_name || 'Unknown Artist'
+
+    // Get context data (first entry)
+    const contextData = Array.isArray(work.context) ? work.context[0] : work.context
+    const weatherData = contextData?.weather_data as any
+
+    // Get commerce data (first entry)
+    const commerceData = Array.isArray(work.commerce) ? work.commerce[0] : work.commerce
+
+    // Prepare work data for NFT with complete provenance
     const workNftData: WorkNftData = {
       tbtId: work.tbt_id,
       title: work.title,
       description: work.description,
       category: work.category,
       technique: work.technique,
-      creatorName: work.creator?.display_name || 'Unknown Artist',
+      creatorName,
       mediaUrl: work.media_url,
       certifiedAt: new Date(work.certified_at || work.created_at).toISOString().split('T')[0],
-      transferCode: work.transfer_code || 'N/A'
+      transferCode: work.transfer_code || 'N/A',
+      // Context and provenance data
+      creationLocation: contextData?.location_name,
+      creationWeather: weatherData?.conditions,
+      elaborationType: contextData?.elaboration_type,
+      // Commerce data
+      marketPrice: commerceData?.initial_price,
+      currency: commerceData?.currency || 'USD',
+      royaltyPercentage: commerceData?.royalty_type === 'percentage' 
+        ? commerceData?.royalty_value 
+        : undefined,
+      // Initial transfer history (creation event)
+      transferHistory: [{
+        type: 'creation' as const,
+        date: new Date(work.certified_at || work.created_at).toISOString().split('T')[0],
+        toName: creatorName,
+      }]
     }
 
     // Mint NFT

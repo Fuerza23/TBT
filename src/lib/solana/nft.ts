@@ -2,6 +2,17 @@ import { Keypair, PublicKey } from '@solana/web3.js'
 import { Metaplex, keypairIdentity, irysStorage } from '@metaplex-foundation/js'
 import { getConnection, SOLANA_NETWORK, TBT_COLLECTION } from './config'
 
+// Transfer history entry
+export interface TransferHistoryEntry {
+  type: 'creation' | 'transfer'
+  date: string
+  fromName?: string  // null for creation
+  toName: string
+  transferType?: 'sale' | 'gift' // for transfers only
+  price?: string     // for sales only
+  currency?: string  // for sales only
+}
+
 // Work data for NFT creation
 export interface WorkNftData {
   tbtId: string
@@ -13,26 +24,101 @@ export interface WorkNftData {
   mediaUrl?: string
   certifiedAt: string
   transferCode: string
+  // New fields for complete history
+  creationLocation?: string
+  creationWeather?: string
+  elaborationType?: string
+  marketPrice?: number
+  currency?: string
+  royaltyPercentage?: number
+  // Transfer history
+  transferHistory?: TransferHistoryEntry[]
 }
 
 /**
  * Generate NFT metadata from work data (Metaplex compatible)
+ * Includes complete history and provenance tracking
  */
 export function generateNftMetadata(work: WorkNftData) {
   const externalUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://tbt.cafe'}/work/${work.tbtId}`
   
-  const attributes: Array<{ trait_type: string; value: string }> = [
+  // Core attributes
+  const attributes: Array<{ trait_type: string; value: string | number }> = [
     { trait_type: 'TBT ID', value: work.tbtId },
     { trait_type: 'Creator', value: work.creatorName },
     { trait_type: 'Certified Date', value: work.certifiedAt },
     { trait_type: 'Transfer Code', value: work.transferCode },
   ]
 
+  // Category and technique
   if (work.category) {
     attributes.push({ trait_type: 'Category', value: work.category })
   }
   if (work.technique) {
     attributes.push({ trait_type: 'Technique', value: work.technique })
+  }
+
+  // Context and provenance
+  if (work.creationLocation) {
+    attributes.push({ trait_type: 'Creation Location', value: work.creationLocation })
+  }
+  if (work.creationWeather) {
+    attributes.push({ trait_type: 'Creation Weather', value: work.creationWeather })
+  }
+  if (work.elaborationType) {
+    attributes.push({ trait_type: 'Elaboration Type', value: work.elaborationType })
+  }
+
+  // Commercial info
+  if (work.marketPrice !== undefined && work.currency) {
+    attributes.push({ trait_type: 'Initial Price', value: `${work.marketPrice} ${work.currency}` })
+  }
+  if (work.royaltyPercentage !== undefined) {
+    attributes.push({ trait_type: 'Artist Royalty', value: `${work.royaltyPercentage}%` })
+  }
+
+  // Transfer history - stored as attributes for on-chain provenance
+  // The history is immutable once recorded
+  const history = work.transferHistory || []
+  
+  // Always add creation as first history entry if not present
+  if (history.length === 0) {
+    history.push({
+      type: 'creation',
+      date: work.certifiedAt,
+      toName: work.creatorName,
+    })
+  }
+
+  // Add history entries as attributes (limited to prevent excessive metadata size)
+  attributes.push({ trait_type: 'Total Owners', value: history.length })
+  
+  // Add the last 10 history entries (most recent)
+  const recentHistory = history.slice(-10)
+  recentHistory.forEach((entry, index) => {
+    const historyIndex = history.length - recentHistory.length + index + 1
+    
+    if (entry.type === 'creation') {
+      attributes.push({ 
+        trait_type: `History ${historyIndex}`, 
+        value: `Created by ${entry.toName} on ${entry.date}` 
+      })
+    } else {
+      const transferInfo = entry.transferType === 'sale' && entry.price
+        ? `Sold for ${entry.price} ${entry.currency || 'USD'}`
+        : entry.transferType === 'gift' ? 'Gifted' : 'Transferred'
+      
+      attributes.push({ 
+        trait_type: `History ${historyIndex}`, 
+        value: `${transferInfo} from ${entry.fromName || 'Unknown'} to ${entry.toName} on ${entry.date}` 
+      })
+    }
+  })
+
+  // Add current owner (last in history)
+  const currentOwner = history[history.length - 1]
+  if (currentOwner) {
+    attributes.push({ trait_type: 'Current Owner', value: currentOwner.toName })
   }
 
   return {
@@ -44,7 +130,14 @@ export function generateNftMetadata(work: WorkNftData) {
     attributes,
     properties: {
       files: work.mediaUrl ? [{ uri: work.mediaUrl, type: 'image/jpeg' }] : [],
-      category: 'image'
+      category: 'image',
+      // Store complete history in properties for full provenance
+      provenance: {
+        creator: work.creatorName,
+        createdAt: work.certifiedAt,
+        totalTransfers: Math.max(0, history.length - 1),
+        history: history,
+      }
     }
   }
 }
@@ -158,7 +251,7 @@ export async function mintTBTNft(
   // Wait a bit for the metadata to propagate
   await sleep(2000)
   
-  // Mint NFT with retry
+  // Mint NFT with retry - mutable to allow history updates
   const { nft } = await withRetry(async () => {
     console.log('Creating NFT on Solana...')
     return await metaplex.nfts().create({
@@ -167,7 +260,7 @@ export async function mintTBTNft(
       symbol: metadata.symbol,
       sellerFeeBasisPoints: 500, // 5% royalty
       tokenOwner: ownerPublicKey,
-      isMutable: false, // NFT is immutable after minting
+      isMutable: true, // NFT is mutable to allow history updates on transfers
     })
   }, 3, 3000)
   
@@ -180,11 +273,62 @@ export async function mintTBTNft(
 }
 
 /**
- * Transfer NFT to new owner
+ * Update NFT metadata with new transfer history
+ * This updates the on-chain metadata to reflect the new ownership
+ */
+export async function updateNftMetadata(
+  mintAddress: string,
+  updatedWork: WorkNftData
+): Promise<{ tokenUri: string }> {
+  const metaplex = getMetaplex()
+  
+  // Find the existing NFT
+  const nft = await metaplex.nfts().findByMint({ mintAddress: new PublicKey(mintAddress) })
+  
+  if (!nft.isMutable) {
+    console.warn('NFT is not mutable, cannot update metadata')
+    return { tokenUri: nft.uri }
+  }
+  
+  // Generate updated metadata with new history
+  const updatedMetadata = generateNftMetadata(updatedWork)
+  
+  console.log(`Updating NFT metadata for ${mintAddress}...`)
+  
+  // Upload new metadata
+  const { uri: newTokenUri } = await withRetry(async () => {
+    return await metaplex.nfts().uploadMetadata(updatedMetadata as any)
+  }, 3, 3000)
+  
+  console.log(`New metadata uploaded: ${newTokenUri}`)
+  
+  // Update the NFT to point to new metadata
+  await withRetry(async () => {
+    await metaplex.nfts().update({
+      nftOrSft: nft,
+      uri: newTokenUri,
+      name: updatedMetadata.name,
+    })
+  }, 3, 3000)
+  
+  console.log(`NFT metadata updated successfully`)
+  
+  return { tokenUri: newTokenUri }
+}
+
+/**
+ * Transfer NFT to new owner and update metadata with transfer history
  */
 export async function transferNft(
   mintAddress: string,
-  newOwner: PublicKey
+  newOwner: PublicKey,
+  transferInfo?: {
+    fromName: string
+    toName: string
+    transferType: 'sale' | 'gift'
+    price?: number
+    currency?: string
+  }
 ): Promise<string> {
   const metaplex = getMetaplex()
   

@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { Logo } from '@/components/ui/Logo'
+import { LanguageSelector } from '@/components/LanguageSelector'
 import { Menu, X, Search, Plus, User } from 'lucide-react'
 
 interface NavbarProps {
@@ -80,10 +81,12 @@ export function Navbar({ user }: NavbarProps) {
                 </Link>
               </>
             ) : (
-              <Link href="/login" className="btn-primary text-sm">
-                Dashboard 
+              <Link href="/" className="btn-primary text-sm">
+                Iniciar
               </Link>
             )}
+            <div className="w-px h-6 bg-tbt-border mx-2" />
+            <LanguageSelector />
           </div>
 
           {/* Mobile menu button */}
@@ -122,11 +125,19 @@ export function Navbar({ user }: NavbarProps) {
               </>
             ) : (
               <div className="pt-2">
-                <Link href="/login" className="btn-primary w-full text-center">
-                  Dashboard
+                <Link href="/" className="btn-primary w-full text-center">
+                  Iniciar
                 </Link>
               </div>
             )}
+            
+            {/* Language Selector in Mobile */}
+            <div className="pt-4 border-t border-tbt-border mt-4">
+              <div className="flex items-center justify-between px-4">
+                <span className="text-sm text-tbt-muted">Idioma / Language</span>
+                <LanguageSelector />
+              </div>
+            </div>
           </div>
         </div>
       )}

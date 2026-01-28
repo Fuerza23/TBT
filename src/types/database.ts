@@ -389,6 +389,10 @@ export interface Database {
           user_edited_summary: string | null
           signed_at: string | null
           created_at: string
+          // Expanded context fields (Phase 2)
+          general_context: string | null
+          contemporary_context: string | null
+          elaboration_type: string | null
         }
         Insert: {
           work_id: string
@@ -403,10 +407,17 @@ export interface Database {
           ai_model?: string | null
           user_edited_summary?: string | null
           signed_at?: string | null
+          // Expanded context fields (Phase 2)
+          general_context?: string | null
+          contemporary_context?: string | null
+          elaboration_type?: string | null
         }
         Update: {
           user_edited_summary?: string | null
           signed_at?: string | null
+          general_context?: string | null
+          contemporary_context?: string | null
+          elaboration_type?: string | null
         }
       }
       mms_deliveries: {

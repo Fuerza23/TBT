@@ -114,7 +114,7 @@ export default function MisTBTsPage() {
   ]
 
   return (
-    <PageLayout showNavbar={false}>
+    <PageLayout>
       <PageHeader 
         title="Mis TBTs"
         actions={

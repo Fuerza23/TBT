@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   // Si hay error en la URL
   if (error_description) {
     console.error('Auth error:', error_description)
-    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(error_description)}`, requestUrl.origin))
+    return NextResponse.redirect(new URL(`/?error=${encodeURIComponent(error_description)}`, requestUrl.origin))
   }
 
   const cookieStore = cookies()
@@ -25,9 +25,9 @@ export async function GET(request: NextRequest) {
       const { error } = await supabase.auth.exchangeCodeForSession(code)
       if (error) {
         console.error('Code exchange error:', error)
-        return NextResponse.redirect(new URL('/login?error=code_exchange_failed', requestUrl.origin))
+        return NextResponse.redirect(new URL('/?error=code_exchange_failed', requestUrl.origin))
       }
-      return NextResponse.redirect(new URL('/mis-tbts', requestUrl.origin))
+      return NextResponse.redirect(new URL('/', requestUrl.origin))
     }
 
     if (token_hash && type) {
@@ -38,20 +38,20 @@ export async function GET(request: NextRequest) {
       })
       if (error) {
         console.error('Token verification error:', error)
-        return NextResponse.redirect(new URL('/login?error=token_invalid', requestUrl.origin))
+        return NextResponse.redirect(new URL('/?error=token_invalid', requestUrl.origin))
       }
-      return NextResponse.redirect(new URL('/mis-tbts', requestUrl.origin))
+      return NextResponse.redirect(new URL('/', requestUrl.origin))
     }
 
     // Si no hay code ni token_hash, verificar si ya hay sesión
     const { data: { session } } = await supabase.auth.getSession()
     if (session) {
-      return NextResponse.redirect(new URL('/mis-tbts', requestUrl.origin))
+      return NextResponse.redirect(new URL('/', requestUrl.origin))
     }
 
   } catch (err) {
     console.error('Callback error:', err)
   }
 
-  return NextResponse.redirect(new URL('/login', requestUrl.origin))
+  return NextResponse.redirect(new URL('/', requestUrl.origin))
 }

@@ -2,12 +2,14 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import { Logo } from '@/components/ui/Logo'
 import { AuthModal } from '@/components/AuthModal'
 import { CreateTBTModal } from '@/components/CreateTBTModal'
 import { ArrowRight } from 'lucide-react'
 
 export default function HomePage() {
+  const t = useTranslations('home')
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
 
@@ -35,7 +37,7 @@ export default function HomePage() {
             onClick={() => setIsAuthModalOpen(true)}
             className="btn-primary text-xl px-12 py-5 shadow-2xl shadow-tbt-primary/25 hover:shadow-tbt-primary/40 transition-all hover:scale-105"
           >
-            Crear mi primer TBT
+            {t('createFirstTBT')}
             <ArrowRight className="w-6 h-6" />
           </button>
           </div>
@@ -46,7 +48,7 @@ export default function HomePage() {
             href="/verificar" 
             className="text-tbt-muted hover:text-tbt-text transition-colors text-sm"
           >
-            ¿Ya tienes un TBT? Verificar →
+            {t('alreadyHaveTBT')}
           </Link>
                     </div>
                   </div>

@@ -3,8 +3,10 @@
 import { useEffect } from 'react'
 import { ArrowRight, AlertCircle, Check, X } from 'lucide-react'
 import Image from 'next/image'
+import { useTranslations } from 'next-intl'
 import PhoneInput from './PhoneInput'
 import { useAuth } from '@/hooks/useAuth'
+import { LanguageSelector } from './LanguageSelector'
 
 interface AuthModalProps {
   isOpen: boolean
@@ -13,7 +15,15 @@ interface AuthModalProps {
 }
 
 export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
+  const t = useTranslations('auth')
+  const tCommon = useTranslations('common')
   const auth = useAuth({ onSuccess: onAuthSuccess, onClose })
+
+  // Validate phone number (minimum 10 digits after cleaning)
+  const isPhoneValid = () => {
+    const cleanPhone = auth.phone.replace(/\D/g, '')
+    return cleanPhone.length >= 10
+  }
 
   // Cerrar modal con Escape
   useEffect(() => {
@@ -51,21 +61,24 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
       
       {/* Modal */}
       <div className="relative w-full max-w-md mx-4 bg-tbt-card border border-tbt-border rounded-2xl shadow-2xl animate-in">
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 w-8 h-8 rounded-full bg-tbt-bg/50 hover:bg-tbt-bg flex items-center justify-center transition-colors"
-        >
-          <X className="w-4 h-4 text-tbt-muted" />
-        </button>
+        {/* Header with Language Selector and Close button */}
+        <div className="absolute top-4 right-4 flex items-center gap-2">
+          <LanguageSelector />
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-tbt-bg/50 hover:bg-tbt-bg flex items-center justify-center transition-colors"
+          >
+            <X className="w-4 h-4 text-tbt-muted" />
+          </button>
+        </div>
 
         <div className="p-6 sm:p-8">
-          <h2 className="text-2xl font-semibold text-tbt-text mb-6">Autenticación</h2>
+          <h2 className="text-2xl font-semibold text-tbt-text mb-6">{t('title')}</h2>
 
           {auth.step === 'contact' && (
             <form onSubmit={handleSendOTP}>
               <div>
-                <label className="input-label">Número de teléfono</label>
+                <label className="input-label">{t('phoneNumber')}</label>
                 <PhoneInput
                   value={auth.phone}
                   onChange={auth.setPhone}
@@ -82,14 +95,14 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
 
               <button
                 type="submit"
-                disabled={auth.isLoading}
-                className="btn-primary w-full mt-6"
+                disabled={auth.isLoading || !isPhoneValid()}
+                className={`btn-primary w-full mt-6 ${!isPhoneValid() && !auth.isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 {auth.isLoading ? (
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
                   <>
-                    Enviar código Auth
+                    {t('sendCode')}
                     <ArrowRight className="w-5 h-5" />
                   </>
                 )}
@@ -105,22 +118,22 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
                 <div className="w-16 h-16 rounded-full bg-tbt-success/20 flex items-center justify-center mx-auto mb-4">
                   <Check className="w-8 h-8 text-tbt-success" />
                 </div>
-                <p className="text-xl text-tbt-text font-medium">¡Código enviado!</p>
+                <p className="text-xl text-tbt-text font-medium">{t('codeSent')}</p>
                 <p className="text-sm text-tbt-muted mt-2">
-                  Ingresa el código de {auth.useDevMode ? '6' : '8'} dígitos enviado a:
+                  {t('enterCode', { digits: auth.useDevMode ? '6' : '8' })}
                 </p>
                 <p className="text-tbt-primary font-medium mt-1">
                   {auth.useDevMode ? `📧 ${auth.devEmail}` : auth.phone}
                 </p>
                 {auth.useDevMode && (
                   <p className="text-xs text-yellow-500 mt-2 bg-yellow-500/10 p-2 rounded">
-                    ⚠️ Modo desarrollo activo
+                    {t('devModeActive')}
                   </p>
                 )}
               </div>
 
               <div>
-                <label className="input-label">Código de verificación</label>
+                <label className="input-label">{t('verificationCode')}</label>
                 <input
                   type="text"
                   value={auth.otp}
@@ -142,14 +155,14 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
 
               <button
                 type="submit"
-                disabled={auth.isLoading || auth.otp.length < 8}
-                className="btn-primary w-full mt-6"
+                disabled={auth.isLoading || auth.otp.length < 6}
+                className={`btn-primary w-full mt-6 ${auth.otp.length < 6 && !auth.isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 {auth.isLoading ? (
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
                   <>
-                    Continuar
+                    {tCommon('continue')}
                     <ArrowRight className="w-5 h-5" />
                   </>
                 )}
@@ -161,7 +174,7 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
                 disabled={auth.isLoading}
                 className="btn-ghost w-full mt-2 text-sm"
               >
-                Reenviar código
+                {t('resendCode')}
               </button>
 
               <button
@@ -169,7 +182,7 @@ export function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalProps) {
                 onClick={auth.goBack}
                 className="btn-ghost w-full text-sm"
               >
-                Usar otro número
+                {t('useAnotherNumber')}
               </button>
 
               <Logos />

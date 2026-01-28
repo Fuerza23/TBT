@@ -1,9 +1,9 @@
 import { createServerClient } from '@/lib/supabase'
 import { notFound } from 'next/navigation'
-import { Navbar } from '@/components/layout/Navbar'
+import Link from 'next/link'
 import { Certificate } from '@/components/Certificate'
 import { CertificateActions } from '@/components/CertificateActions'
-import { Shield, Calendar, User, MapPin, Tag, History } from 'lucide-react'
+import { Shield, Calendar, User, MapPin, Tag, History, Home } from 'lucide-react'
 import type { Metadata } from 'next'
 
 interface PageProps {
@@ -86,14 +86,19 @@ export default async function WorkVerificationPage({ params }: PageProps) {
   const context = work.work_context
 
   return (
-    <>
-      <Navbar user={null} />
-      
-      <main className="pt-24 pb-16">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          
-          {/* Badge de verificación */}
-          <div className="flex justify-center mb-8">
+    <main className="py-8 min-h-screen">
+      {/* Back to Home */}
+      <div className="fixed top-6 left-6 z-50">
+        <Link href="/" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-tbt-card/80 backdrop-blur-sm border border-tbt-border/50 text-tbt-muted hover:text-tbt-text transition-colors">
+          <Home className="w-4 h-4" />
+          <span className="text-sm">Inicio</span>
+        </Link>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-12">
+        
+        {/* Badge de verificación */}
+        <div className="flex justify-center mb-8">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-tbt-success/10 border border-tbt-success/20">
               <Shield className="w-4 h-4 text-tbt-success" />
               <span className="text-sm text-tbt-success font-medium">TBT Verificado</span>
@@ -124,31 +129,37 @@ export default async function WorkVerificationPage({ params }: PageProps) {
                 <h3 className="text-sm font-medium text-tbt-muted uppercase tracking-wider mb-4">
                   Creador Original
                 </h3>
-                <div className="flex items-center gap-4">
+                <a 
+                  href={`/creator/${work.creator_id}`}
+                  className="flex items-center gap-4 group"
+                >
                   {work.creator?.avatar_url ? (
                     <img 
                       src={work.creator.avatar_url} 
                       alt={work.creator.display_name}
-                      className="w-14 h-14 rounded-full object-cover"
+                      className="w-14 h-14 rounded-full object-cover ring-2 ring-transparent group-hover:ring-tbt-primary/30 transition-all"
                     />
                   ) : (
-                    <div className="w-14 h-14 rounded-full bg-gradient-accent flex items-center justify-center">
+                    <div className="w-14 h-14 rounded-full bg-gradient-accent flex items-center justify-center ring-2 ring-transparent group-hover:ring-tbt-primary/30 transition-all">
                       <span className="text-white text-xl font-bold">
                         {work.creator?.display_name?.charAt(0).toUpperCase()}
                       </span>
                     </div>
                   )}
-                  <div>
-                    <p className="text-lg font-semibold text-tbt-text">
-                      {work.creator?.display_name}
+                  <div className="flex-1">
+                    <p className="text-lg font-semibold text-tbt-text group-hover:text-tbt-primary transition-colors">
+                      {work.creator?.public_alias || work.creator?.display_name}
                     </p>
                     {work.creator?.bio && (
                       <p className="text-sm text-tbt-muted line-clamp-2">
                         {work.creator.bio}
                       </p>
                     )}
+                    <p className="text-xs text-tbt-primary mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      Ver perfil completo →
+                    </p>
                   </div>
-                </div>
+                </a>
               </div>
 
               {/* Contexto */}
@@ -307,6 +318,5 @@ export default async function WorkVerificationPage({ params }: PageProps) {
           </div>
         </div>
       </main>
-    </>
   )
 }
