@@ -3,6 +3,7 @@ import { countryToLocale, defaultLocale } from '@/i18n/config'
 
 // Required for Vercel: this route uses request.headers and cannot be statically rendered
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 export async function GET(request: NextRequest) {
   try {
