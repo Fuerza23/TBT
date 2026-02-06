@@ -61,11 +61,28 @@ tbt-app/
 
 ## 🔑 Variables de Entorno
 
+Copia `env.example` como `.env.local` y completa los valores. Ver `env.example` para la lista completa.
+
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
+
+### Ambientes (local / test / producción)
+
+| Ambiente   | URL base                    | Uso                                                |
+|-----------|-----------------------------|----------------------------------------------------|
+| **Local** | `http://localhost:3000`      | Desarrollo con `npm run dev`                        |
+| **Test**  | `https://brocha.vercel.app`  | Validación en Vercel (preview o dominio de test)   |
+| **Producción** | *(pendiente)*          | Dominio definitivo cuando exista                  |
+
+En **Vercel** → Project → Settings → Environment Variables:
+
+- **Preview**: `NEXT_PUBLIC_APP_URL` = `https://brocha.vercel.app`
+- **Production**: `NEXT_PUBLIC_APP_URL` = tu URL de producción cuando la tengas
+
+El código usa `NEXT_PUBLIC_APP_URL` para enlaces a certificados, emails y SMS. Opcionalmente puedes usar `NEXT_PUBLIC_APP_ENV` (`local` \| `test` \| `production`) para forzar el entorno; si no se define, se infiere a partir de la URL.
 
 ---
 

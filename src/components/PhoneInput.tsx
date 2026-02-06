@@ -39,6 +39,7 @@ export default function PhoneInput({
           width: 100%;
           display: flex !important;
           align-items: stretch !important;
+          gap: 12px !important;
         }
         
         .phone-input-wrapper .react-international-phone-input-container input,
@@ -72,10 +73,9 @@ export default function PhoneInput({
         }
         
         .phone-input-wrapper .react-international-phone-country-selector-button {
-          background-color: transparent !important;
-          border: none !important;
-          border-right: 1px solid rgba(255, 255, 255, 0.1) !important;
-          border-radius: 12px 0 0 12px !important;
+          background-color: rgba(26, 26, 46, 0.8) !important;
+          border: 1px solid rgba(255, 255, 255, 0.1) !important;
+          border-radius: 12px !important;
           padding: 0 12px !important;
           height: 100% !important;
         }
@@ -104,11 +104,13 @@ export default function PhoneInput({
         
         .phone-input-wrapper .react-international-phone-country-selector-dropdown__list-item--selected {
           background-color: rgba(0, 255, 153, 0.2) !important;
+          color: #fff !important;
         }
         
         .phone-input-wrapper .react-international-phone-dial-code {
-          color: rgba(255, 255, 255, 0.6) !important;
+          color: rgba(255, 255, 255, 0.8) !important;
           margin-left: 8px !important;
+          font-size: 16px !important;
         }
         
         .phone-input-wrapper .react-international-phone-country-selector-dropdown__search-input {

@@ -168,10 +168,6 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
     userEditedSummary: '',
     signaturePhone: '',
     isSigned: false,
-    // Expanded context fields (Phase 2)
-    generalContext: '',
-    contemporaryContext: '',
-    elaborationType: '' as '' | 'manual' | 'digital' | 'mixed' | 'ai_assisted' | 'collaborative',
   })
 
   // Form State - Phase 6: Payment
@@ -357,33 +353,70 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
 
   const generateContext = async () => {
     setIsLoading(true)
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    const now = new Date()
-    const summary = `Esta obra titulada "${workData.title}" fue registrada el ${now.toLocaleDateString('es-ES', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    })} por ${creatorData.publicAlias || creatorData.legalName || 'el artista'}. 
+    setError('')
     
-Categorizada como ${workData.category}, esta pieza representa una contribución única al panorama artístico contemporáneo. El material principal utilizado es ${workData.primaryMaterial || 'técnica mixta'}.
+    try {
+      // Get user location from browser
+      let location: { lat: number; lng: number } | null = null
+      
+      if (navigator.geolocation) {
+        try {
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              timeout: 10000,
+              enableHighAccuracy: false
+            })
+          })
+          location = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          }
+        } catch (geoError) {
+          console.warn('Could not get location:', geoError)
+          // Continue without location
+        }
+      }
 
-${workData.aboutWork ? `Sobre la obra: ${workData.aboutWork.substring(0, 200)}...` : ''}
+      // Call the API
+      const response = await fetch('/api/generate-context', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          creator: {
+            alias: creatorData.publicAlias || creatorData.legalName,
+            bio: creatorData.aboutCreator,
+            creatorType: creatorData.creatorType
+          },
+          work: {
+            title: workData.title,
+            category: workData.category,
+            material: workData.primaryMaterial
+          },
+          location: location || undefined
+        })
+      })
 
-Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableciendo un vínculo permanente entre el creador y su creación.`
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Error al generar contexto')
+      }
 
-    updateContext({
-      location: 'Bogotá, Colombia',
-      weather: '18°C, Parcialmente nublado',
-      headlines: [
-        'Mercados globales en alza tras acuerdo comercial',
-        'Nueva exposición de arte latinoamericano en NY',
-        'Tecnología blockchain revoluciona el mercado del arte'
-      ],
-      aiSummary: summary,
-      userEditedSummary: summary,
-    })
-    setIsLoading(false)
+      const data = await response.json()
+
+      updateContext({
+        location: data.location || 'Ubicación no disponible',
+        coordinates: location,
+        weather: data.weather || 'Clima no disponible',
+        headlines: [],
+        aiSummary: data.summary,
+        userEditedSummary: data.summary,
+      })
+    } catch (err) {
+      console.error('Error generating context:', err)
+      setError(err instanceof Error ? err.message : 'Error al generar contexto con IA')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   // Allowed image types for Supabase storage
@@ -614,11 +647,165 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
 
   const handlePayment = async () => {
     setIsLoading(true)
+    setError('')
     setPaymentData({ ...paymentData, status: 'processing' })
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    setPaymentData({ status: 'completed', paymentIntentId: 'pi_simulated_' + Date.now() })
-    setIsLoading(false)
-    nextPhase()
+
+    try {
+      // First, save the work as a draft to get a workId
+      let workId = ''
+      
+      // Upload media if present
+      let mediaUrl = ''
+      if (workData.mediaFile) {
+        const fileExt = workData.mediaFile.name.split('.').pop()
+        const fileName = `${user.id}/${Date.now()}.${fileExt}`
+        const { error: uploadError } = await supabase.storage
+          .from('works-media')
+          .upload(fileName, workData.mediaFile)
+        if (!uploadError) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('works-media')
+            .getPublicUrl(fileName)
+          mediaUrl = publicUrl
+        }
+      }
+
+      // Upload audio/video if present
+      let audioVideoUrl = ''
+      if (workData.audioVideoFile) {
+        const fileExt = workData.audioVideoFile.name.split('.').pop()
+        const fileName = `${user.id}/av_${Date.now()}.${fileExt}`
+        const { error: uploadError } = await supabase.storage
+          .from('works-media')
+          .upload(fileName, workData.audioVideoFile)
+        if (!uploadError) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('works-media')
+            .getPublicUrl(fileName)
+          audioVideoUrl = publicUrl
+        }
+      }
+
+      // Upload profile photo if present
+      let avatarUrl = ''
+      if (creatorData.profilePhoto) {
+        const fileExt = creatorData.profilePhoto.name.split('.').pop()
+        const fileName = `${user.id}/avatar_${Date.now()}.${fileExt}`
+        const { error: uploadError } = await supabase.storage
+          .from('works-media')
+          .upload(fileName, creatorData.profilePhoto)
+        if (!uploadError) {
+          const { data: { publicUrl } } = supabase.storage
+            .from('works-media')
+            .getPublicUrl(fileName)
+          avatarUrl = publicUrl
+        }
+      }
+
+      // Store all form data in context_data for later completion
+      const formDataToStore = {
+        creatorData: {
+          creatorType: creatorData.creatorType,
+          legalName: creatorData.legalName,
+          publicAlias: creatorData.publicAlias,
+          collectiveName: creatorData.collectiveName,
+          leadRepresentative: creatorData.leadRepresentative,
+          entityName: creatorData.entityName,
+          taxId: creatorData.taxId,
+          corporateTitle: creatorData.corporateTitle,
+          credentials: creatorData.credentials,
+          socialLinkedin: creatorData.socialLinkedin,
+          socialWebsite: creatorData.socialWebsite,
+          socialInstagram: creatorData.socialInstagram,
+          socialFacebook: creatorData.socialFacebook,
+          socialYoutube: creatorData.socialYoutube,
+          socialOther: creatorData.socialOther,
+          aboutCreator: creatorData.aboutCreator,
+          email: creatorData.email,
+          avatarUrl: avatarUrl,
+        },
+        commProData: {
+          marketPrice: commProData.marketPrice,
+          currency: commProData.currency,
+          royaltyType: commProData.royaltyType,
+          royaltyValue: commProData.royaltyValue,
+          originalityDeclaration: commProData.originalityDeclaration,
+          derivativeReference: commProData.derivativeReference,
+        },
+        contextData: {
+          location: contextData.location,
+          coordinates: contextData.coordinates,
+          weather: contextData.weather,
+          headlines: contextData.headlines,
+          aiSummary: contextData.aiSummary,
+          userEditedSummary: contextData.userEditedSummary,
+          signaturePhone: contextData.signaturePhone,
+          isSigned: contextData.isSigned,
+        },
+      }
+
+      // Create draft work with all data
+      const { data: work, error: workError } = await supabase
+        .from('works')
+        .insert({
+          creator_id: user.id,
+          current_owner_id: user.id,
+          title: workData.title,
+          description: workData.aboutWork,
+          category: workData.category,
+          technique: workData.primaryMaterial,
+          media_url: mediaUrl,
+          media_type: 'image',
+          status: 'draft',
+          primary_material: workData.primaryMaterial,
+          creation_date: workData.creationDate || null,
+          is_published: workData.isPublished,
+          work_visibility: workData.workStatus,
+          asset_links: workData.assetLinks.filter(l => l.trim()),
+          about_work: workData.aboutWork,
+          audio_video_url: audioVideoUrl || null,
+          audio_video_type: workData.audioVideoType || null,
+          payment_status: 'pending',
+          market_price: commProData.marketPrice ? parseFloat(commProData.marketPrice) : null,
+          currency: commProData.currency,
+          royalty_type: commProData.royaltyType === 'none' ? 'none' : commProData.royaltyType,
+          royalty_value: commProData.royaltyType !== 'none' ? commProData.royaltyValue : null,
+          context_data: formDataToStore,
+        })
+        .select()
+        .single()
+
+      if (workError) throw workError
+      workId = work.id
+
+      // Call Stripe checkout API
+      const response = await fetch('/api/stripe/create-checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'tbt_creation',
+          workId: workId,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Error al crear sesión de pago')
+      }
+
+      const { checkoutUrl } = await response.json()
+
+      // Redirect to Stripe Checkout
+      window.location.href = checkoutUrl
+    } catch (err: any) {
+      console.error('Error processing payment:', err)
+      setError(err.message || 'Error al procesar el pago')
+      setPaymentData({ status: 'pending', paymentIntentId: '' })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleFinalSubmit = async () => {
@@ -763,10 +950,6 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
           ai_summary: contextData.aiSummary,
           user_edited_summary: contextData.userEditedSummary,
           signed_at: new Date().toISOString(),
-          // Expanded context fields (Phase 2)
-          general_context: contextData.generalContext || null,
-          contemporary_context: contextData.contemporaryContext || null,
-          elaboration_type: contextData.elaborationType || null,
         })
 
       await supabase
@@ -1936,64 +2119,6 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
                     <div className="p-3 rounded-lg bg-tbt-bg">
                       <p className="text-xs text-tbt-muted mb-1">🌤️ {t('context.weather')}</p>
                       <p className="text-sm text-tbt-text">{contextData.weather}</p>
-                    </div>
-                  </div>
-
-                  {/* Expanded Context Fields */}
-                  <div className="p-4 rounded-xl bg-tbt-bg/50 border border-tbt-border/30 space-y-4">
-                    <h4 className="font-medium text-tbt-text flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-tbt-primary" />
-                      {t('context.contextOfWork')}
-                    </h4>
-                    
-                    <div>
-                      <label className="input-label">{t('context.generalContext')}</label>
-                      <textarea
-                        value={contextData.generalContext}
-                        onChange={(e) => updateContext({ generalContext: e.target.value })}
-                        placeholder={t('context.generalContextPlaceholder')}
-                        className="input min-h-[80px] resize-none text-sm"
-                        disabled={contextData.isSigned}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="input-label">{t('context.contemporaryContext')}</label>
-                      <textarea
-                        value={contextData.contemporaryContext}
-                        onChange={(e) => updateContext({ contemporaryContext: e.target.value })}
-                        placeholder={t('context.contemporaryContextPlaceholder')}
-                        className="input min-h-[80px] resize-none text-sm"
-                        disabled={contextData.isSigned}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="input-label">{t('context.elaborationType')}</label>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
-                        {[
-                          { value: 'manual', labelKey: 'manual' as const, icon: '✋' },
-                          { value: 'digital', labelKey: 'digital' as const, icon: '💻' },
-                          { value: 'mixed', labelKey: 'mixed' as const, icon: '🎨' },
-                          { value: 'ai_assisted', labelKey: 'aiAssisted' as const, icon: '🤖' },
-                          { value: 'collaborative', labelKey: 'collaborative' as const, icon: '👥' },
-                        ].map(({ value, labelKey, icon }) => (
-                          <button
-                            key={value}
-                            type="button"
-                            onClick={() => !contextData.isSigned && updateContext({ elaborationType: value as typeof contextData.elaborationType })}
-                            disabled={contextData.isSigned}
-                            className={`p-3 rounded-xl border-2 transition-all text-sm ${
-                              contextData.elaborationType === value
-                                ? 'border-tbt-primary bg-tbt-primary/10 text-tbt-text'
-                                : 'border-tbt-border hover:border-tbt-primary/30 text-tbt-muted'
-                            } ${contextData.isSigned ? 'opacity-50 cursor-not-allowed' : ''}`}
-                          >
-                            <span className="text-lg mb-1 block">{icon}</span>
-                            {t(`context.${labelKey}`)}
-                          </button>
-                        ))}
-                      </div>
                     </div>
                   </div>
 

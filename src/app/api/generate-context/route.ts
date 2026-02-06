@@ -1,0 +1,215 @@
+import { NextRequest, NextResponse } from 'next/server'
+
+// Types for the request
+interface GenerateContextRequest {
+  creator: {
+    alias: string
+    bio?: string
+    creatorType: 'individual' | 'group' | 'corporation'
+  }
+  work: {
+    title: string
+    category: string
+    material?: string
+  }
+  location?: {
+    lat: number
+    lng: number
+  }
+}
+
+interface ContextResponse {
+  location: string
+  weather: string
+  summary: string
+  generatedAt: string
+}
+
+// Reverse geocode coordinates to location name
+async function getLocationName(lat: number, lng: number): Promise<string> {
+  try {
+    // Using free Nominatim API for reverse geocoding
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10`,
+      { headers: { 'User-Agent': 'TBT-App/1.0' } }
+    )
+    if (!response.ok) return 'Ubicación desconocida'
+    const data = await response.json()
+    const city = data.address?.city || data.address?.town || data.address?.village || ''
+    const country = data.address?.country || ''
+    return city && country ? `${city}, ${country}` : country || 'Ubicación desconocida'
+  } catch {
+    return 'Ubicación desconocida'
+  }
+}
+
+// Get weather from OpenWeatherMap (free tier)
+async function getWeather(lat: number, lng: number): Promise<string> {
+  const apiKey = process.env.OPENWEATHER_API_KEY
+  if (!apiKey) {
+    // Return mock weather if no API key
+    return '20°C, Parcialmente nublado'
+  }
+  
+  try {
+    const response = await fetch(
+      `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric&lang=es`
+    )
+    if (!response.ok) return 'Clima no disponible'
+    const data = await response.json()
+    const temp = Math.round(data.main?.temp || 20)
+    const desc = data.weather?.[0]?.description || 'parcialmente nublado'
+    return `${temp}°C, ${desc.charAt(0).toUpperCase() + desc.slice(1)}`
+  } catch {
+    return 'Clima no disponible'
+  }
+}
+
+// Generate AI summary using Gemini
+async function generateAISummary(
+  creator: GenerateContextRequest['creator'],
+  work: GenerateContextRequest['work'],
+  location: string,
+  weather: string
+): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY is not configured')
+  }
+
+  const creatorDescription = creator.creatorType === 'individual' 
+    ? `el artista ${creator.alias}`
+    : creator.creatorType === 'group'
+    ? `el colectivo artístico ${creator.alias}`
+    : `la entidad ${creator.alias}`
+
+  const prompt = `Eres un crítico de arte experto. Genera un contexto artístico de EXACTAMENTE 200 palabras para una obra de arte. 
+  
+Datos de la obra:
+- Título: "${work.title}"
+- Categoría: ${work.category}
+- Material/Técnica: ${work.material || 'No especificado'}
+- Creador: ${creatorDescription}
+- Biografía del creador: ${creator.bio || 'No disponible'}
+- Ubicación de creación: ${location}
+- Clima al momento de creación: ${weather}
+- Fecha: ${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+
+El contexto debe:
+1. Describir el significado potencial de la obra basado en su título y categoría
+2. Relacionar la obra con su contexto geográfico y temporal
+3. Mencionar cómo las condiciones del momento (clima, fecha) pueden haber influido en la creación
+4. Ser profesional pero accesible, en español
+5. NO inventar datos que no tengas, solo interpretar los proporcionados
+
+Responde SOLO con el texto del contexto, sin encabezados ni formato adicional.`
+
+  const maxRetries = 3
+  let lastError: Error | null = null
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 400,
+            }
+          })
+        }
+      )
+
+      if (response.status === 429) {
+        // Rate limited - wait and retry
+        const waitTime = Math.pow(2, attempt) * 2000 // 2s, 4s, 8s
+        console.log(`Rate limited, waiting ${waitTime}ms before retry ${attempt + 1}/${maxRetries}`)
+        await new Promise(resolve => setTimeout(resolve, waitTime))
+        continue
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('Gemini API error:', errorData)
+        throw new Error(`Gemini API error: ${response.status}`)
+      }
+
+      const data = await response.json()
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+      
+      if (!text) {
+        throw new Error('No text generated by Gemini')
+      }
+
+      return text.trim()
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Unknown error')
+      console.error(`Attempt ${attempt + 1} failed:`, lastError.message)
+    }
+  }
+
+  // Fallback: generate local summary if Gemini fails
+  console.warn('All Gemini attempts failed, using local fallback')
+  const now = new Date()
+  return `Esta obra titulada "${work.title}" fue registrada el ${now.toLocaleDateString('es-ES', { 
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+  })} por ${creatorDescription} en ${location}. 
+
+Categorizada como ${work.category}, esta pieza representa una contribución única al panorama artístico contemporáneo. El material principal utilizado es ${work.material || 'técnica mixta'}.
+
+${creator.bio ? `Sobre el creador: ${creator.bio}` : ''}
+
+Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableciendo un vínculo permanente entre el creador y su creación en condiciones climáticas de ${weather}.`
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body: GenerateContextRequest = await request.json()
+    
+    // Validate required fields
+    if (!body.creator?.alias || !body.work?.title || !body.work?.category) {
+      return NextResponse.json(
+        { error: 'Missing required fields: creator.alias, work.title, work.category' },
+        { status: 400 }
+      )
+    }
+
+    // Get location data
+    let locationName = 'Ubicación no especificada'
+    let weather = 'Clima no disponible'
+    
+    if (body.location?.lat && body.location?.lng) {
+      [locationName, weather] = await Promise.all([
+        getLocationName(body.location.lat, body.location.lng),
+        getWeather(body.location.lat, body.location.lng)
+      ])
+    }
+
+    // Generate AI summary
+    const summary = await generateAISummary(
+      body.creator,
+      body.work,
+      locationName,
+      weather
+    )
+
+    const response: ContextResponse = {
+      location: locationName,
+      weather,
+      summary,
+      generatedAt: new Date().toISOString()
+    }
+
+    return NextResponse.json(response)
+  } catch (error) {
+    console.error('Error in generate-context:', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to generate context' },
+      { status: 500 }
+    )
+  }
+}

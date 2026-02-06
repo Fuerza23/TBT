@@ -169,6 +169,7 @@
       "payWithStripe": "Pagar con Stripe"
     },
     "delivery": {
+      "title": "Entrega",
       "allReady": "¡Todo listo!",
       "reviewAndRegister": "Revisa los datos y registra tu TBT",
       "notificationsTo": "Se enviará notificación a:",
@@ -186,7 +187,19 @@
       "blockchain": "Blockchain (Solana)",
       "viewOnSolscan": "Ver en Solscan",
       "pending": "Pendiente",
-      "viewCertificate": "Ver mi Certificado TBT"
+      "viewCertificate": "Ver mi Certificado TBT",
+      "processingPayment": "Procesando Pago",
+      "verifyingPayment": "Verificando pago...",
+      "creatingTBT": "Creando tu TBT...",
+      "blockchainRegistration": "Registrando en blockchain, enviando notificaciones...",
+      "goToMyTBTs": "Ir a Mis TBTs",
+      "paymentCancelled": "Pago cancelado",
+      "paymentCancelledMessage": "El proceso de pago fue cancelado. No se realizó ningún cargo.",
+      "draftSaved": "Tu TBT permanece guardado como borrador.",
+      "tryAgain": "Intentar de nuevo",
+      "completionError": "Error al completar",
+      "completionErrorMessage": "Hubo un problema al completar tu TBT. Por favor intenta de nuevo.",
+      "retryInfo": "Puedes intentar realizar el pago nuevamente o volver a tus TBTs guardados."
     }
   },
   "verify": {
