@@ -294,14 +294,19 @@ export async function POST(request: NextRequest) {
 
     // Initialize Supabase client
     const supabase = createRouteClient()
-    
-    // Get authorization header
+
+    // Validate Bearer token
     const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
+    if (!authHeader?.startsWith('Bearer ')) {
       return NextResponse.json(
         { error: 'No autorizado - falta token de autenticación' },
         { status: 401 }
       )
+    }
+    const token = authHeader.slice(7)
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !user) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 
     // Parse request body
@@ -315,6 +320,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Verify the caller is the user the notification is for
+    if (user.id !== userId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     // Get work details with creator info
     const { data: work, error: workError } = await supabase
       .from('works')
@@ -324,6 +334,7 @@ export async function POST(request: NextRequest) {
         media_url,
         category,
         certified_at,
+        creator_id,
         creator:profiles!works_creator_id_fkey(display_name, public_alias),
         work_commerce(initial_price, currency)
       `)
@@ -335,6 +346,11 @@ export async function POST(request: NextRequest) {
         { error: 'Obra no encontrada' },
         { status: 404 }
       )
+    }
+
+    // Verify the caller is the creator of the work
+    if ((work as any).creator_id !== user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     // Get creator name
@@ -409,10 +425,7 @@ export async function POST(request: NextRequest) {
       }
 
       return NextResponse.json(
-        { 
-          error: 'Error al enviar email',
-          details: sendError.message 
-        },
+        { error: 'Error al enviar email' },
         { status: 500 }
       )
     }
@@ -421,10 +434,7 @@ export async function POST(request: NextRequest) {
     console.error('Error in send-email:', error)
 
     return NextResponse.json(
-      { 
-        error: 'Error al procesar solicitud de email',
-        details: error.message 
-      },
+      { error: 'Error al procesar solicitud de email' },
       { status: 500 }
     )
   }

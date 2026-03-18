@@ -8,12 +8,12 @@ import { Check, Loader2, Mail, Send, Globe, Eye, Link as LinkIcon } from 'lucide
 interface CompletionData {
   tbtId: string
   workTitle: string
-  phoneNumber: string
-  email: string
-  smsSent: boolean
-  emailSent: boolean
-  solscanUrl: string
-  mintAddress: string
+  phoneNumber?: string
+  email?: string
+  smsSent?: boolean
+  emailSent?: boolean
+  solscanUrl?: string
+  mintAddress?: string
 }
 
 export default function PaymentSuccessPage() {
@@ -28,6 +28,8 @@ export default function PaymentSuccessPage() {
     const completePayment = async () => {
       const sessionId = searchParams.get('session_id')
       const workId = searchParams.get('workId')
+      const type = searchParams.get('type') // 'tbt_creation' or 'transfer'
+      const transferId = searchParams.get('transferId')
 
       if (!sessionId || !workId) {
         setStatus('error')
@@ -40,24 +42,36 @@ export default function PaymentSuccessPage() {
       await new Promise(resolve => setTimeout(resolve, 2000))
 
       try {
-        // Call the complete-tbt API
-        const response = await fetch('/api/complete-tbt', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ workId }),
-        })
+        let response;
+        
+        if (type === 'transfer') {
+             if (!transferId) throw new Error('Falta ID de transferencia')
+             // Call complete-transfer API
+             response = await fetch('/api/complete-transfer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ transferId, sessionId }), // Send sessionId for verification
+             })
+        } else {
+             // Default: Call complete-tbt API
+             response = await fetch('/api/complete-tbt', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ workId, sessionId }),
+             })
+        }
 
         if (!response.ok) {
           const errorData = await response.json()
-          throw new Error(errorData.error || 'Error al completar TBT')
+          throw new Error(errorData.error || 'Error al completar proceso')
         }
 
         const data = await response.json()
         setCompletionData(data)
         setStatus('success')
       } catch (err: any) {
-        console.error('Error completing TBT:', err)
-        setErrorMessage(err.message || 'Error al completar el TBT')
+        console.error('Error completing process:', err)
+        setErrorMessage(err.message || 'Error al completar')
         setStatus('error')
       }
     }
@@ -100,8 +114,12 @@ export default function PaymentSuccessPage() {
                 <div className="w-20 h-20 rounded-full bg-tbt-success/20 flex items-center justify-center mx-auto mb-4">
                   <Check className="w-10 h-10 text-tbt-success" />
                 </div>
-                <h4 className="text-2xl font-bold text-tbt-text mb-2">{t('delivery.registered')}</h4>
-                <p className="text-tbt-muted">{t('delivery.certifiedSuccess')}</p>
+                <h4 className="text-2xl font-bold text-tbt-text mb-2">
+                    {searchParams.get('type') === 'transfer' ? '¡Transferencia Exitosa!' : t('delivery.registered')}
+                </h4>
+                <p className="text-tbt-muted">
+                    {searchParams.get('type') === 'transfer' ? 'El TBT ha sido transferido a tu nombre.' : t('delivery.certifiedSuccess')}
+                </p>
               </div>
 
               {/* Confirmation Details */}
@@ -166,9 +184,19 @@ export default function PaymentSuccessPage() {
                       {t('delivery.viewOnSolscan')}
                       <Globe className="w-3 h-3" />
                     </a>
+                  ) : completionData.mintAddress ? (
+                    <a 
+                      href={`https://solscan.io/token/${completionData.mintAddress}${process.env.NEXT_PUBLIC_SOLANA_NETWORK === 'mainnet-beta' ? '' : `?cluster=${process.env.NEXT_PUBLIC_SOLANA_NETWORK || 'devnet'}`}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-medium text-tbt-primary hover:underline flex items-center gap-1"
+                    >
+                      {completionData.mintAddress.slice(0, 8) + '...'}
+                      <Globe className="w-3 h-3" />
+                    </a>
                   ) : (
                     <span className="text-sm text-tbt-muted">
-                      {completionData.mintAddress ? completionData.mintAddress.slice(0, 8) + '...' : t('delivery.pending')}
+                      {t('delivery.pending')}
                     </span>
                   )}
                 </div>

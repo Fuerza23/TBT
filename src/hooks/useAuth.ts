@@ -2,11 +2,14 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@/lib/supabase'
 
-// Development bypass accounts
-const DEV_ACCOUNTS: Record<string, string> = {
-  '1234567890': 'hdgarzon3@gmail.com',
-  '0987654321': 'henrygarzon089@gmail.com',
-}
+// Development bypass accounts — never active in production
+const DEV_ACCOUNTS: Record<string, string> =
+  process.env.NODE_ENV !== 'production'
+    ? {
+        [process.env.DEV_PHONE_1 || '']: process.env.DEV_EMAIL_1 || '',
+        [process.env.DEV_PHONE_2 || '']: process.env.DEV_EMAIL_2 || '',
+      }
+    : {}
 
 type AuthStep = 'contact' | 'verify'
 

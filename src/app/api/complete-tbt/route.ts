@@ -1,23 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient } from '@/lib/supabase-route'
-
-// Generate unique transfer code (XXXX-XXXX format)
-function generateTransferCode(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  let code = ''
-  for (let i = 0; i < 4; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  code += '-'
-  for (let i = 0; i < 4; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return code
-}
+import { generateTransferCode } from '@/lib/transfer-code'
+import { isProduction } from '@/lib/app-env'
+import { stripe } from '@/lib/stripe'
 
 export async function POST(request: NextRequest) {
   try {
-    const { workId } = await request.json()
+    const { workId, couponCode, sessionId } = await request.json()
     console.log('Complete TBT request for workId:', workId)
 
     if (!workId) {
@@ -56,12 +45,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Work not found (null)' }, { status: 404 })
     }
 
-    // Check if payment is completed
+    // Check if payment is completed OR if a valid free coupon is provided
+    let paymentBypassed = false;
+    
+    // TBT coupon only valid outside production
+    if (!isProduction && couponCode && couponCode.trim().toUpperCase() === 'TBT') {
+       paymentBypassed = true
+       console.log('Payment bypassed with dev coupon:', couponCode)
+    }
+
     console.log('Work payment status:', work.payment_status)
-    if (work.payment_status !== 'completed') {
-      return NextResponse.json({ 
-        error: `Payment not completed. Current status: ${work.payment_status}` 
-      }, { status: 400 })
+
+    // If payment not yet confirmed by webhook, verify directly with Stripe
+    if (!paymentBypassed && work.payment_status !== 'completed') {
+      const stripeSessionId = sessionId || work.payment_intent_id
+      let verified = false
+
+      if (stripeSessionId) {
+        try {
+          const session = await stripe.checkout.sessions.retrieve(stripeSessionId)
+          if (session.payment_status === 'paid') {
+            verified = true
+            await supabase
+              .from('works')
+              .update({ payment_status: 'completed' })
+              .eq('id', workId)
+            work.payment_status = 'completed'
+            console.log('Payment verified directly with Stripe')
+          }
+        } catch (stripeError) {
+          console.error('Error verifying Stripe session:', stripeError)
+        }
+      }
+
+      if (!verified) {
+        return NextResponse.json({
+          error: `Payment not completed. Current status: ${work.payment_status}`
+        }, { status: 400 })
+      }
     }
 
     // Check if already finalized (has tbt_id means already processed)
@@ -192,18 +213,14 @@ export async function POST(request: NextRequest) {
 
     console.log('TBT certified with ID:', updatedWork?.tbt_id)
 
-    // Mint NFT on Solana (call function directly to avoid auth issues)
+    // Mint NFT on Solana — single-wallet model (project wallet owns all NFTs)
     let mintAddress = ''
     let solscanUrl = ''
     
     try {
-      // Import minting functions directly
       const { mintTBTNft } = await import('@/lib/solana/nft')
       const { getExplorerUrl } = await import('@/lib/solana/config')
-      const { createEncryptedWallet } = await import('@/lib/solana/wallet')
-      const { PublicKey } = await import('@solana/web3.js')
       
-      // Get work with creator info for NFT metadata
       const { data: workWithCreator } = await supabase
         .from('works')
         .select(`
@@ -216,44 +233,15 @@ export async function POST(request: NextRequest) {
         .single()
       
       if (workWithCreator && !workWithCreator.mint_address) {
-        // Get or create wallet for user
-        let ownerPublicKey: InstanceType<typeof PublicKey>
-        
-        const { data: userWallet } = await supabase
-          .from('wallets')
-          .select('public_key')
-          .eq('user_id', user.id)
-          .eq('is_primary', true)
-          .single()
-        
-        if (userWallet?.public_key) {
-          ownerPublicKey = new PublicKey(userWallet.public_key)
-        } else {
-          // Create wallet for user
-          const { publicKey, encryptedSecretKey } = createEncryptedWallet()
-          
-          await supabase.from('wallets').insert({
-            user_id: user.id,
-            public_key: publicKey,
-            encrypted_private_key: encryptedSecretKey,
-            network: 'solana',
-            is_primary: true
-          })
-          
-          ownerPublicKey = new PublicKey(publicKey)
-          console.log(`Created wallet for user ${user.id}: ${publicKey}`)
-        }
-        
-        // Get creator name
         const creatorInfo = workWithCreator.creator as any
         const creatorName = creatorInfo?.public_alias || creatorInfo?.display_name || 'Unknown Artist'
         
-        // Get context and commerce data
         const ctxData = Array.isArray(workWithCreator.context) ? workWithCreator.context[0] : workWithCreator.context
         const commData = Array.isArray(workWithCreator.commerce) ? workWithCreator.commerce[0] : workWithCreator.commerce
         const weatherInfo = ctxData?.weather_data as any
         
-        // Prepare work data for NFT
+        const certDate = new Date(workWithCreator.certified_at || workWithCreator.created_at).toISOString().split('T')[0]
+        
         const workNftData = {
           tbtId: workWithCreator.tbt_id || updatedWork?.tbt_id,
           title: workWithCreator.title,
@@ -262,7 +250,7 @@ export async function POST(request: NextRequest) {
           technique: workWithCreator.technique,
           creatorName,
           mediaUrl: workWithCreator.media_url,
-          certifiedAt: new Date(workWithCreator.certified_at || workWithCreator.created_at).toISOString().split('T')[0],
+          certifiedAt: certDate,
           transferCode: workWithCreator.transfer_code || transferCode,
           creationLocation: ctxData?.location_name,
           creationWeather: weatherInfo?.conditions,
@@ -272,19 +260,17 @@ export async function POST(request: NextRequest) {
           royaltyPercentage: commData?.royalty_type === 'percentage' ? commData?.royalty_value : undefined,
           transferHistory: [{
             type: 'creation' as const,
-            date: new Date(workWithCreator.certified_at || workWithCreator.created_at).toISOString().split('T')[0],
+            date: certDate,
             toName: creatorName,
           }]
         }
         
         console.log('Minting NFT for TBT:', workNftData.tbtId)
         
-        // Mint NFT
-        const mintResult = await mintTBTNft(workNftData, ownerPublicKey)
+        const mintResult = await mintTBTNft(workNftData)
         mintAddress = mintResult.mintAddress
         solscanUrl = getExplorerUrl(mintAddress)
         
-        // Update work with mint info
         await supabase
           .from('works')
           .update({
@@ -294,6 +280,15 @@ export async function POST(request: NextRequest) {
             nft_status: 'minted'
           })
           .eq('id', workId)
+        
+        // Record first owner in ownership_history (creator = first owner)
+        await supabase.from('ownership_history').insert({
+          work_id: workId,
+          owner_name: creatorName,
+          owner_user_id: user.id,
+          event_type: 'creation',
+          sequence_number: 1,
+        })
         
         console.log('NFT minted successfully:', mintAddress)
       } else if (workWithCreator?.mint_address) {

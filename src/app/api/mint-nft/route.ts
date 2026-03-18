@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient } from '@/lib/supabase-route'
-import { PublicKey } from '@solana/web3.js'
-import { mintTBTNft, WorkNftData, getExplorerUrl } from '@/lib/solana'
+import { mintTBTNft, WorkNftData } from '@/lib/solana/nft'
+import { getExplorerUrl } from '@/lib/solana/config'
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,13 +13,11 @@ export async function POST(request: NextRequest) {
 
     const supabase = createRouteClient()
 
-    // Verify authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get work with creator info, context, and commerce data
     const { data: work, error: workError } = await supabase
       .from('works')
       .select(`
@@ -35,12 +33,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Work not found' }, { status: 404 })
     }
 
-    // Verify user owns this work
     if (work.creator_id !== user.id) {
       return NextResponse.json({ error: 'Not authorized to mint this work' }, { status: 403 })
     }
 
-    // Check if already minted
     if (work.mint_address) {
       return NextResponse.json({
         mintAddress: work.mint_address,
@@ -50,48 +46,15 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Get or create wallet for user
-    let ownerPublicKey: PublicKey
-
-    // Check if user has a wallet
-    const { data: userWallet } = await supabase
-      .from('wallets')
-      .select('public_key')
-      .eq('user_id', user.id)
-      .eq('is_primary', true)
-      .single()
-
-    if (userWallet?.public_key) {
-      ownerPublicKey = new PublicKey(userWallet.public_key)
-    } else {
-      // Create wallet for user
-      const { createEncryptedWallet } = await import('@/lib/solana/wallet')
-      const { publicKey, encryptedSecretKey } = createEncryptedWallet()
-      
-      await supabase.from('wallets').insert({
-        user_id: user.id,
-        public_key: publicKey,
-        encrypted_private_key: encryptedSecretKey,
-        network: 'solana',
-        is_primary: true
-      })
-      
-      ownerPublicKey = new PublicKey(publicKey)
-      console.log(`Created wallet for user ${user.id}: ${publicKey}`)
-    }
-
-    // Get creator name (prefer public_alias)
     const creatorData = work.creator as any
     const creatorName = creatorData?.public_alias || creatorData?.display_name || 'Unknown Artist'
 
-    // Get context data (first entry)
     const contextData = Array.isArray(work.context) ? work.context[0] : work.context
     const weatherData = contextData?.weather_data as any
-
-    // Get commerce data (first entry)
     const commerceData = Array.isArray(work.commerce) ? work.commerce[0] : work.commerce
 
-    // Prepare work data for NFT with complete provenance
+    const certDate = new Date(work.certified_at || work.created_at).toISOString().split('T')[0]
+
     const workNftData: WorkNftData = {
       tbtId: work.tbt_id,
       title: work.title,
@@ -100,30 +63,25 @@ export async function POST(request: NextRequest) {
       technique: work.technique,
       creatorName,
       mediaUrl: work.media_url,
-      certifiedAt: new Date(work.certified_at || work.created_at).toISOString().split('T')[0],
+      certifiedAt: certDate,
       transferCode: work.transfer_code || 'N/A',
-      // Context and provenance data
       creationLocation: contextData?.location_name,
       creationWeather: weatherData?.conditions,
       elaborationType: contextData?.elaboration_type,
-      // Commerce data
       marketPrice: commerceData?.initial_price,
       currency: commerceData?.currency || 'USD',
-      royaltyPercentage: commerceData?.royalty_type === 'percentage' 
-        ? commerceData?.royalty_value 
+      royaltyPercentage: commerceData?.royalty_type === 'percentage'
+        ? commerceData?.royalty_value
         : undefined,
-      // Initial transfer history (creation event)
       transferHistory: [{
         type: 'creation' as const,
-        date: new Date(work.certified_at || work.created_at).toISOString().split('T')[0],
+        date: certDate,
         toName: creatorName,
       }]
     }
 
-    // Mint NFT
-    const { mintAddress, tokenUri } = await mintTBTNft(workNftData, ownerPublicKey)
+    const { mintAddress, tokenUri } = await mintTBTNft(workNftData)
 
-    // Update work with mint info
     await supabase
       .from('works')
       .update({
@@ -133,6 +91,15 @@ export async function POST(request: NextRequest) {
         nft_status: 'minted'
       })
       .eq('id', workId)
+
+    // Record first owner in ownership_history
+    await supabase.from('ownership_history').insert({
+      work_id: workId,
+      owner_name: creatorName,
+      owner_user_id: user.id,
+      event_type: 'creation',
+      sequence_number: 1,
+    })
 
     return NextResponse.json({
       success: true,

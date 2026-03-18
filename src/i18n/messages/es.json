@@ -166,7 +166,9 @@
       "fee": "Tarifa única de registro TBT",
       "completed": "Pago completado",
       "processing": "Procesando...",
-      "payWithStripe": "Pagar con Stripe"
+      "payWithStripe": "Pagar con Stripe",
+      "discountCode": "Código de descuento",
+      "completeRegistration": "Completar Registro Gratis"
     },
     "delivery": {
       "title": "Entrega",

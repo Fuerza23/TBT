@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createRouteClient } from '@/lib/supabase-route'
 
 // Types for the request
 interface GenerateContextRequest {
@@ -110,7 +111,7 @@ Responde SOLO con el texto del contexto, sin encabezados ni formato adicional.`
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -168,8 +169,14 @@ Este registro TBT garantiza la autenticidad y trazabilidad de la obra, estableci
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = createRouteClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body: GenerateContextRequest = await request.json()
-    
+
     // Validate required fields
     if (!body.creator?.alias || !body.work?.title || !body.work?.category) {
       return NextResponse.json(

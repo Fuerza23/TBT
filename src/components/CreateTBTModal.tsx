@@ -188,6 +188,14 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
     mintAddress: '',
   })
 
+  // Discount Code State
+  const [couponCode, setCouponCode] = useState('')
+  const [discount, setDiscount] = useState<{ valid: boolean; type: string; value: number } | null>(null)
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false)
+  const [couponError, setCouponError] = useState('')
+
+
+
   useEffect(() => {
     if (isOpen) {
       checkAuth()
@@ -411,11 +419,42 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
         aiSummary: data.summary,
         userEditedSummary: data.summary,
       })
-    } catch (err) {
-      console.error('Error generating context:', err)
-      setError(err instanceof Error ? err.message : 'Error al generar contexto con IA')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const validateCoupon = async () => {
+    if (!couponCode.trim()) return
+    
+    setIsValidatingCoupon(true)
+    setCouponError('')
+    setDiscount(null)
+
+    try {
+      const response = await fetch('/api/validate-coupon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: couponCode })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.valid) {
+        setCouponError(data.error || 'Código inválido')
+        return
+      }
+
+      setDiscount({
+        valid: true,
+        type: data.type,
+        value: data.value
+      })
+    } catch (err) {
+      console.error('Error validating coupon:', err)
+      setCouponError('Error al validar el código')
+    } finally {
+      setIsValidatingCoupon(false)
     }
   }
 
@@ -778,6 +817,47 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
       if (workError) throw workError
       workId = work.id
 
+    // Check if free (100% discount OR fixed discount >= price)
+    // Current fixed price is 5.00 USD
+    const price = 5.00
+    const isFree = discount?.valid && (
+        (discount.type === 'percentage' && discount.value >= 100) ||
+        (discount.type === 'fixed' && discount.value >= price)
+    )
+
+    if (isFree) {
+      // Direct completion for free TBTs
+      const response = await fetch('/api/complete-tbt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workId, couponCode }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || tErrors('paymentHeaders'))
+      }
+
+      const data = await response.json()
+      
+      setPaymentData({ 
+        status: 'completed', 
+        paymentIntentId: 'free-coupon' 
+      })
+      
+      setConfirmationData({
+        tbtId: data.tbtId,
+        workTitle: data.workTitle,
+        phoneNumber: data.phoneNumber,
+        email: data.email,
+        smsSent: data.smsSent,
+        emailSent: data.emailSent,
+        solscanUrl: data.solscanUrl,
+        mintAddress: data.mintAddress,
+      })
+      
+      setPhase(7)
+    } else {
       // Call Stripe checkout API
       const response = await fetch('/api/stripe/create-checkout', {
         method: 'POST',
@@ -785,20 +865,24 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          workId,
+          price: 5.00, // TODO: Apply partial discounts if needed
+          currency: 'usd', 
           type: 'tbt_creation',
-          workId: workId,
+          couponCode: discount?.valid ? couponCode : undefined // Pass coupon to Stripe if needed for tracking
         }),
       })
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Error al crear sesión de pago')
+        throw new Error(errorData.error || tErrors('paymentHeaders'))
       }
 
       const { checkoutUrl } = await response.json()
 
       // Redirect to Stripe Checkout
       window.location.href = checkoutUrl
+    }
     } catch (err: any) {
       console.error('Error processing payment:', err)
       setError(err.message || 'Error al procesar el pago')
@@ -2200,8 +2284,47 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
                 <div className="w-16 h-16 rounded-full bg-tbt-gold/20 flex items-center justify-center mx-auto mb-4">
                   <CreditCard className="w-8 h-8 text-tbt-gold" />
                 </div>
-                <p className="text-3xl font-bold text-tbt-text mb-2">$5.00 USD</p>
+
+                <p className="text-3xl font-bold text-tbt-text mb-2">
+                  {discount?.valid && (
+                      (discount.type === 'percentage' && discount.value >= 100) ||
+                      (discount.type === 'fixed' && discount.value >= 5)
+                  ) ? (
+                    <span className="text-tbt-success">GRATIS</span>
+                  ) : (
+                    "$5.00 USD"
+                  )}
+                </p>
                 <p className="text-tbt-muted mb-6">{t('payment.fee')}</p>
+
+                {/* Discount Code Input */}
+                {!paymentData.status || paymentData.status === 'pending' ? (
+                  <div className="max-w-xs mx-auto mb-6">
+                     <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={couponCode}
+                          onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                          placeholder={t('payment.discountCode') || "Código de descuento"}
+                          className="input text-center uppercase"
+                          disabled={isValidatingCoupon || (discount?.valid ?? false)}
+                        />
+                        <button
+                          onClick={validateCoupon}
+                          disabled={!couponCode || isValidatingCoupon || (discount?.valid ?? false)}
+                          className="px-4 py-2 bg-tbt-border rounded-lg text-sm font-medium hover:bg-tbt-border/80 disabled:opacity-50"
+                        >
+                          {isValidatingCoupon ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                        </button>
+                     </div>
+                     {couponError && <p className="text-red-500 text-xs mt-1 text-left">{couponError}</p>}
+                     {discount?.valid && (
+                       <p className="text-tbt-success text-xs mt-1 text-left flex items-center gap-1">
+                         <Check className="w-3 h-3" /> Descuento aplicado: {discount.type === 'fixed' ? `$${discount.value} OFF` : `${discount.value}% OFF`}
+                       </p>
+                     )}
+                  </div>
+                ) : null}
 
                 {paymentData.status === 'completed' ? (
                   <div className="flex items-center justify-center gap-2 text-tbt-success">
@@ -2222,7 +2345,13 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
                     ) : (
                       <>
                         <CreditCard className="w-5 h-5" />
-                        {t('payment.payWithStripe')}
+                        {discount?.valid && (
+                            (discount.type === 'percentage' && discount.value >= 100) ||
+                            (discount.type === 'fixed' && discount.value >= 5)
+                        )
+                          ? (t('payment.completeRegistration') || "Completar Registro Gratis")
+                          : t('payment.payWithStripe')
+                        }
                       </>
                     )}
                   </button>

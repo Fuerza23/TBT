@@ -1,4 +1,4 @@
-import { createServerClient } from '@/lib/supabase'
+import { createAuthServerClient } from '@/lib/supabase'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { 
@@ -24,7 +24,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function ReciboPage({ params }: PageProps) {
-  const supabase = createServerClient()
+  const supabase = createAuthServerClient()
   const tbtId = params.tbtId.toUpperCase()
 
   // Get authenticated user

@@ -32,9 +32,59 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Ownership checks and server-side royalty calculation
+    let royaltyAmount: number | undefined
+
+    if (type === 'tbt_creation') {
+      const { data: work, error: workError } = await supabase
+        .from('works')
+        .select('id, creator_id')
+        .eq('id', workId)
+        .single()
+
+      if (workError || !work) {
+        return NextResponse.json({ error: 'Work not found' }, { status: 404 })
+      }
+
+      if (work.creator_id !== user.id) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    } else if (type === 'transfer') {
+      if (!transferId) {
+        return NextResponse.json({ error: 'transferId is required for transfer type' }, { status: 400 })
+      }
+
+      const { data: transfer, error: transferError } = await supabase
+        .from('transfers')
+        .select('id, from_owner_id, work_id')
+        .eq('id', transferId)
+        .single()
+
+      if (transferError || !transfer) {
+        return NextResponse.json({ error: 'Transfer not found' }, { status: 404 })
+      }
+
+      if (transfer.from_owner_id !== user.id) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+
+      // Compute royalty server-side from work_commerce
+      const { data: commerce } = await supabase
+        .from('work_commerce')
+        .select('royalty_type, royalty_value, initial_price, currency')
+        .eq('work_id', transfer.work_id)
+        .single()
+
+      if (commerce?.royalty_type === 'percentage' && commerce.royalty_value > 0 && commerce.initial_price) {
+        royaltyAmount = (commerce.initial_price * commerce.royalty_value) / 100
+      } else if (commerce?.royalty_type === 'fixed' && commerce.royalty_value > 0) {
+        royaltyAmount = commerce.royalty_value
+      }
+    }
+
     // Generate URLs
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    const successUrl = `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}&type=${type}&workId=${workId}`
+    const successUrl = `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}&type=${type}&workId=${workId}${transferId ? `&transferId=${transferId}` : ''}`
     const cancelUrl = `${baseUrl}/payment/cancel?type=${type}&workId=${workId}`
 
     // Create Stripe checkout session
@@ -45,6 +95,7 @@ export async function POST(request: NextRequest) {
       successUrl,
       cancelUrl,
       transferId,
+      royaltyAmount,
     })
 
     // Store payment record
@@ -58,7 +109,6 @@ export async function POST(request: NextRequest) {
         status: 'pending',
       })
 
-      // Update work payment status
       await supabase
         .from('works')
         .update({ payment_status: 'pending', payment_intent_id: session.id })
@@ -69,6 +119,7 @@ export async function POST(request: NextRequest) {
         .update({
           payment_status: 'pending',
           payment_link: session.url,
+          stripe_checkout_session_id: session.id,
         })
         .eq('id', transferId)
     }
@@ -80,7 +131,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Error creating checkout session:', error)
     return NextResponse.json(
-      { error: error.message || 'Failed to create checkout session' },
+      { error: 'Failed to create checkout session' },
       { status: 500 }
     )
   }

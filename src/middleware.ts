@@ -6,8 +6,8 @@ export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
   const supabase = createMiddlewareClient({ req, res })
 
-  // Refrescar la sesión si existe
-  const { data: { session } } = await supabase.auth.getSession()
+  // Validate session with Supabase Auth server (not just cookies)
+  const { data: { user } } = await supabase.auth.getUser()
 
   // Rutas protegidas - si no hay sesión, redirigir a la raíz
   const protectedRoutes = ['/mis-tbts', '/transferir', '/perfil', '/recibo']
@@ -15,7 +15,7 @@ export async function middleware(req: NextRequest) {
     req.nextUrl.pathname.startsWith(route)
   )
 
-  if (isProtectedRoute && !session) {
+  if (isProtectedRoute && !user) {
     return NextResponse.redirect(new URL('/', req.url))
   }
 

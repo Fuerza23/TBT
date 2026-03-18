@@ -40,3 +40,9 @@ coverage/
 *.pem
 *.key
 .vercel
+
+# AI assistant files
+.claude/
+CLAUDE.md
+agent-teams-lite/
+.env.staging.example

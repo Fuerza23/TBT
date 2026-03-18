@@ -229,38 +229,37 @@ async function withRetry<T>(
 }
 
 /**
- * Mint a TBT NFT with retry logic
+ * Mint a TBT NFT to the project's wallet (single-wallet hybrid model).
+ * All NFTs are owned by the project wallet; ownership is tracked
+ * off-chain in Supabase and on-chain via mutable metadata attributes.
  */
 export async function mintTBTNft(
-  work: WorkNftData,
-  ownerPublicKey: PublicKey
+  work: WorkNftData
 ): Promise<{ mintAddress: string; tokenUri: string }> {
-  const metaplex = getMetaplex()
+  const payerKeypair = getPayerKeypair()
+  const metaplex = getMetaplex(payerKeypair)
   const metadata = generateNftMetadata(work)
   
-  console.log(`Minting NFT for TBT ${work.tbtId}...`)
+  console.log(`Minting NFT for TBT ${work.tbtId} to project wallet...`)
   
-  // Upload metadata with retry
   const { uri: tokenUri } = await withRetry(async () => {
     console.log('Uploading metadata to Irys...')
     return await metaplex.nfts().uploadMetadata(metadata as any)
-  }, 3, 3000) // 3 retries, starting at 3 seconds
+  }, 3, 3000)
   
   console.log(`Metadata uploaded: ${tokenUri}`)
   
-  // Wait a bit for the metadata to propagate
   await sleep(2000)
   
-  // Mint NFT with retry - mutable to allow history updates
   const { nft } = await withRetry(async () => {
     console.log('Creating NFT on Solana...')
     return await metaplex.nfts().create({
       uri: tokenUri,
       name: metadata.name,
       symbol: metadata.symbol,
-      sellerFeeBasisPoints: 500, // 5% royalty
-      tokenOwner: ownerPublicKey,
-      isMutable: true, // NFT is mutable to allow history updates on transfers
+      sellerFeeBasisPoints: 500,
+      tokenOwner: payerKeypair.publicKey,
+      isMutable: true,
     })
   }, 3, 3000)
   
@@ -317,39 +316,9 @@ export async function updateNftMetadata(
 }
 
 /**
- * Transfer NFT to new owner and update metadata with transfer history
+ * Get the project wallet's public key as a string.
+ * Used by API routes to reference the single wallet that holds all NFTs.
  */
-export async function transferNft(
-  mintAddress: string,
-  newOwner: PublicKey,
-  transferInfo?: {
-    fromName: string
-    toName: string
-    transferType: 'sale' | 'gift'
-    price?: number
-    currency?: string
-  }
-): Promise<string> {
-  const metaplex = getMetaplex()
-  
-  const nft = await metaplex.nfts().findByMint({ mintAddress: new PublicKey(mintAddress) })
-  
-  const { response } = await metaplex.nfts().transfer({
-    nftOrSft: nft,
-    toOwner: newOwner,
-  })
-  
-  console.log(`NFT transferred: ${response.signature}`)
-  return response.signature
-}
-
-/**
- * Generate a random keypair for testing
- */
-export function generateTestKeypair(): { publicKey: string; secretKey: string } {
-  const keypair = Keypair.generate()
-  return {
-    publicKey: keypair.publicKey.toString(),
-    secretKey: JSON.stringify(Array.from(keypair.secretKey))
-  }
+export function getProjectWalletPublicKey(): string {
+  return getPayerKeypair().publicKey.toString()
 }

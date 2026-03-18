@@ -16,7 +16,7 @@ export const PAYMENT_CONFIG = {
     description: 'TBT Creation Fee',
   },
   transfer: {
-    amount: 200, // $2.00 in cents
+    amount: 500, // $5.00 in cents
     currency: 'usd',
     description: 'TBT Transfer Fee',
   },
@@ -31,29 +31,48 @@ export interface CreateCheckoutParams {
   userId: string
   successUrl: string
   cancelUrl: string
-  transferId?: string // Only for transfer type
+  transferId?: string
+  /** Royalty amount in dollars (added on top of the base $5 for transfers) */
+  royaltyAmount?: number
 }
 
 export async function createCheckoutSession(params: CreateCheckoutParams) {
-  const { type, workId, userId, successUrl, cancelUrl, transferId } = params
+  const { type, workId, userId, successUrl, cancelUrl, transferId, royaltyAmount = 0 } = params
   const config = type === 'tbt_creation' ? PAYMENT_CONFIG.tbtCreation : PAYMENT_CONFIG.transfer
+
+  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+    {
+      price_data: {
+        currency: config.currency,
+        product_data: {
+          name: config.description,
+          description: `Work ID: ${workId}`,
+        },
+        unit_amount: config.amount,
+      },
+      quantity: 1,
+    },
+  ]
+
+  // Add royalty line item for transfers
+  if (type === 'transfer' && royaltyAmount > 0) {
+    lineItems.push({
+      price_data: {
+        currency: config.currency,
+        product_data: {
+          name: 'Regalía del Artista',
+          description: 'Royalty por transferencia de obra',
+        },
+        unit_amount: Math.round(royaltyAmount * 100), // convert to cents
+      },
+      quantity: 1,
+    })
+  }
 
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
     payment_method_types: ['card'],
-    line_items: [
-      {
-        price_data: {
-          currency: config.currency,
-          product_data: {
-            name: config.description,
-            description: `Work ID: ${workId}`,
-          },
-          unit_amount: config.amount,
-        },
-        quantity: 1,
-      },
-    ],
+    line_items: lineItems,
     success_url: successUrl,
     cancel_url: cancelUrl,
     metadata: {
