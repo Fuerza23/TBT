@@ -42,7 +42,12 @@ coverage/
 .vercel
 
 # AI assistant files
+.agent/
+.agents/
 .claude/
-CLAUDE.md
+.cursor/
+.kilocode/
+skills/
 agent-teams-lite/
+CLAUDE.md
 .env.staging.example
