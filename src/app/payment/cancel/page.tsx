@@ -1,81 +1,49 @@
 'use client'
 
-import { useSearchParams, useRouter } from 'next/navigation'
-import { useTranslations } from 'next-intl'
-import { XCircle, RefreshCw, ArrowLeft } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import Image from 'next/image'
+import { AlertTriangle } from 'lucide-react'
 
 export default function PaymentCancelPage() {
-  const t = useTranslations('tbt')
-  const searchParams = useSearchParams()
   const router = useRouter()
-  const type = searchParams.get('type')
-  const workId = searchParams.get('workId')
-
-  const handleRetry = () => {
-    if (workId && type === 'tbt_creation') {
-      // Redirect back to creator page
-      router.push('/creator')
-    } else {
-      router.push('/mis-tbts')
-    }
-  }
 
   return (
-    <div className="min-h-screen bg-tbt-dark flex items-center justify-center p-4">
-      {/* Modal Container - matches CreateTBTModal styling */}
-      <div className="w-full max-w-lg bg-tbt-card rounded-2xl shadow-xl overflow-hidden border border-tbt-border/50">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-red-500/20 to-transparent p-6 border-b border-tbt-border/50">
-          <h2 className="text-xl font-bold text-tbt-text text-center">
-            {t('delivery.paymentCancelled')}
-          </h2>
+    <div className="min-h-screen bg-[#12121a] flex items-center justify-center p-4 font-montserrat">
+      <div className="w-full max-w-sm px-6">
+        {/* Logo */}
+        <div className="mb-10">
+          <Image src="/logos/TBTLogoPopUp.svg" alt="TBT" width={69} height={28} priority />
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-6">
-          <div className="text-center py-4">
-            <div className="w-20 h-20 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
-              <XCircle className="w-10 h-10 text-red-500" />
-            </div>
-            <h4 className="text-2xl font-bold text-tbt-text mb-2">
-              {t('delivery.paymentCancelled')}
-            </h4>
-            <p className="text-tbt-muted">
-              {t('delivery.paymentCancelledMessage')}
-            </p>
-            {type === 'tbt_creation' && (
-              <p className="text-tbt-muted mt-2">
-                {t('delivery.draftSaved')}
-              </p>
-            )}
-          </div>
-
-          {/* Info Box */}
-          <div className="bg-tbt-bg rounded-xl p-4">
-            <p className="text-sm text-tbt-muted text-center">
-              {t('delivery.retryInfo')}
-            </p>
-          </div>
-
-          {/* Actions */}
-          <div className="space-y-3 pt-2">
-            <button
-              onClick={handleRetry}
-              className="btn-primary w-full justify-center"
-            >
-              <RefreshCw className="w-5 h-5" />
-              {t('delivery.tryAgain')}
-            </button>
-
-            <button
-              onClick={() => router.push('/mis-tbts')}
-              className="btn-secondary w-full justify-center"
-            >
-              <ArrowLeft className="w-5 h-5" />
-              {t('delivery.goToMyTBTs')}
-            </button>
+        {/* Warning icon */}
+        <div className="flex justify-center mb-6">
+          <div className="w-20 h-20 rounded-full bg-[#4a4a1a] flex items-center justify-center">
+            <AlertTriangle className="w-10 h-10 text-yellow-400" />
           </div>
         </div>
+
+        {/* Title */}
+        <h2 className="text-yellow-400 text-xl font-bold text-center mb-4">
+          Proceso Cancelado
+        </h2>
+
+        {/* Description */}
+        <p className="text-gray-300 text-sm text-center leading-relaxed mb-6">
+          En este momento no podemos registrar esta pieza. Te ayudamos con ello en los proximos día, poniendonos en contacto al correo registrado
+        </p>
+
+        {/* Thanks */}
+        <p className="text-white text-base font-bold text-center mb-12">
+          Muchas Gracias.
+        </p>
+
+        {/* Close button */}
+        <button
+          onClick={() => router.push('/')}
+          className="w-full py-3 rounded-full bg-[#EF1385] text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+        >
+          Close
+        </button>
       </div>
     </div>
   )

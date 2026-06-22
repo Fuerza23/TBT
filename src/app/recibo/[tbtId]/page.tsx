@@ -1,4 +1,4 @@
-import { createAuthServerClient } from '@/lib/supabase'
+import { createAuthServerClient } from '@/lib/supabase-server'
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { 

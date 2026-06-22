@@ -38,8 +38,8 @@ import {
   Palette,
   Eye
 } from 'lucide-react'
+import Image from 'next/image'
 import PhoneInput from './PhoneInput'
-import { LanguageSelector } from './LanguageSelector'
 
 // Tipos
 type Phase = 2 | 3 | 4 | 5 | 6 | 7
@@ -88,6 +88,11 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
   const tErrors = useTranslations('errors')
 
   const [phase, setPhase] = useState<Phase>(2)
+  const [creatorSubStep, setCreatorSubStep] = useState<1 | 2>(1)
+  const [workSubStep, setWorkSubStep] = useState<1 | 2 | 3>(1)
+  const [scanProgress, setScanProgress] = useState(0)
+  const [phase4SubStep, setPhase4SubStep] = useState<1 | 2>(1)
+  const [phase5SubStep, setPhase5SubStep] = useState<1 | 2>(1)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [user, setUser] = useState<any>(null)
@@ -100,6 +105,8 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const recordingChunksRef = useRef<Blob[]>([])
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const signatureCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const isDrawingRef = useRef(false)
   
   const router = useRouter()
   const supabase = createBrowserClient()
@@ -127,6 +134,10 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
     aboutCreator: '',
     profilePhoto: null as File | null,
     profilePhotoPreview: '',
+    signatureImage: null as File | null,
+    signatureImagePreview: '',
+    socialTikTok: '',
+    phone: '',
   })
 
   // Form State - Phase 3: Work
@@ -134,6 +145,7 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
     title: '',
     category: '',
     primaryMaterial: '',
+    dimensions: '',
     creationDate: '',
     workStatus: 'publicado' as 'publicado' | 'privado',
     isPublished: true,
@@ -322,6 +334,11 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
     }
     
     setPhase(2)
+    setCreatorSubStep(1)
+    setWorkSubStep(1)
+    setScanProgress(0)
+    setPhase4SubStep(1)
+    setPhase5SubStep(1)
   }
 
   const updateCreator = (updates: Partial<typeof creatorData>) => {
@@ -345,18 +362,39 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
   }
 
   const runPlagiarismScan = async () => {
-    setIsLoading(true)
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    const isClean = Math.random() > 0.2
-    if (isClean) {
+    if (!workData.mediaFile) {
+      setScanProgress(100)
       updateCommPro({ scanStatus: 'clean' })
-    } else {
-      updateCommPro({ 
-        scanStatus: 'conflict',
-        conflictSimilarity: Math.floor(Math.random() * 30) + 70
-      })
+      return
     }
-    setIsLoading(false)
+    setIsLoading(true)
+    setScanProgress(0)
+    // Animate progress while scanning
+    const interval = setInterval(() => {
+      setScanProgress(prev => prev < 85 ? prev + Math.random() * 12 : prev)
+    }, 400)
+    try {
+      const form = new FormData()
+      form.append('file', workData.mediaFile)
+      const res = await fetch('/api/tbt-image/similarity', { method: 'POST', body: form })
+      const data = await res.json()
+
+      clearInterval(interval)
+      setScanProgress(100)
+      if (data.status === 'blocked') {
+        updateCommPro({ scanStatus: 'conflict', conflictSimilarity: Math.round(data.score * 100) })
+      } else if (data.status === 'warning') {
+        updateCommPro({ scanStatus: 'conflict', conflictSimilarity: Math.round(data.score * 100) })
+      } else {
+        updateCommPro({ scanStatus: 'clean' })
+      }
+    } catch {
+      clearInterval(interval)
+      setScanProgress(100)
+      updateCommPro({ scanStatus: 'clean' })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const generateContext = async () => {
@@ -563,7 +601,12 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
   }
 
   const prevPhase = () => {
-    if (phase > 2) setPhase((phase - 1) as Phase)
+    if (phase > 2) {
+      setPhase((phase - 1) as Phase)
+      if (phase === 3) setWorkSubStep(1)
+      if (phase === 4) setPhase4SubStep(1)
+      if (phase === 5) setPhase5SubStep(1)
+    }
   }
 
   // Check if current phase has all required fields filled (for button state)
@@ -586,13 +629,10 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
         if (!workData.category) return false
         return true
       case 4:
-        // Commerce phase - market price required
-        if (!commProData.marketPrice || parseFloat(commProData.marketPrice) <= 0) return false
+        // Commerce phase - scan conflict requires declaration
         if (commProData.scanStatus === 'conflict' && !commProData.originalityDeclaration) return false
         return true
       case 5:
-        // Context phase - must be signed
-        if (!contextData.isSigned) return false
         return true
       case 6:
         // Payment phase - must be completed
@@ -661,10 +701,6 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
         }
         return true
       case 5:
-        if (!contextData.isSigned) {
-          setError('Debes firmar el contexto para continuar')
-          return false
-        }
         return true
       default:
         return true
@@ -727,12 +763,13 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
 
       // Upload profile photo if present
       let avatarUrl = ''
-      if (creatorData.profilePhoto) {
-        const fileExt = creatorData.profilePhoto.name.split('.').pop()
+      const profilePhotoFile = creatorData.signatureImage || creatorData.profilePhoto
+      if (profilePhotoFile) {
+        const fileExt = profilePhotoFile.name.split('.').pop()
         const fileName = `${user.id}/avatar_${Date.now()}.${fileExt}`
         const { error: uploadError } = await supabase.storage
           .from('works-media')
-          .upload(fileName, creatorData.profilePhoto)
+          .upload(fileName, profilePhotoFile)
         if (!uploadError) {
           const { data: { publicUrl } } = supabase.storage
             .from('works-media')
@@ -931,12 +968,13 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
 
       // Upload profile photo if present
       let avatarUrl = ''
-      if (creatorData.profilePhoto) {
-        const fileExt = creatorData.profilePhoto.name.split('.').pop()
+      const profilePhotoFile = creatorData.signatureImage || creatorData.profilePhoto
+      if (profilePhotoFile) {
+        const fileExt = profilePhotoFile.name.split('.').pop()
         const fileName = `${user.id}/avatar_${Date.now()}.${fileExt}`
         const { error: uploadError } = await supabase.storage
           .from('works-media')
-          .upload(fileName, creatorData.profilePhoto)
+          .upload(fileName, profilePhotoFile)
         if (uploadError) {
           console.warn('Error uploading profile photo:', uploadError)
         } else {
@@ -967,6 +1005,7 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
           social_other: creatorData.socialOther ? [creatorData.socialOther] : null,
           bio: creatorData.aboutCreator,
           email: creatorData.email,
+          ...(creatorData.phone && { phone: creatorData.phone }),
           ...(avatarUrl && { avatar_url: avatarUrl }),
         })
         .eq('id', user.id)
@@ -1167,1387 +1206,989 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       
       {/* Modal */}
-      <div className="relative w-full max-w-4xl max-h-[90vh] bg-tbt-card border border-tbt-border rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+      <div className="relative w-full max-w-sm max-h-[92vh] bg-[#12121a] rounded-2xl shadow-2xl overflow-hidden flex flex-col font-montserrat">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-tbt-border">
-          <div>
-            <h2 className="text-2xl font-display font-bold text-tbt-text">
-              TBT | {phase === 2 ? t('create.phases.creator') : 
-                     phase === 3 ? t('create.phases.work') : 
-                     phase === 4 ? t('create.phases.commercial') : 
-                     phase === 5 ? t('create.phases.context') : 
-                     phase === 6 ? t('create.phases.payment') : 
-                     t('create.phases.delivery')}
-            </h2>
+        <div className="flex items-center justify-between px-6 pt-6 pb-3">
+          <div className="flex items-center gap-3">
+            <Image src="/logos/TBTLogoPopUp.svg" alt="TBT" width={69} height={28} priority />
+            <span className="text-white text-lg font-semibold">
+              {phase === 2 ? 'Creador' :
+               phase === 3 ? 'Obra' :
+               phase === 4 ? 'AAi Verificación' :
+               phase === 5 ? 'AAi Verificación' :
+               phase === 6 ? 'Blockchain' : '¡CREADO!'}
+            </span>
           </div>
-          <div className="flex items-center gap-2">
-            <LanguageSelector />
-            <button
-              onClick={onClose}
-              className="w-8 h-8 rounded-full bg-tbt-bg/50 hover:bg-tbt-bg flex items-center justify-center transition-colors"
-            >
-              <X className="w-4 h-4 text-tbt-muted" />
-            </button>
-          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        {/* Phase Progress - Hidden for cleaner UI */}
+        {/* Progress indicator */}
+        {phase >= 2 && phase <= 6 && (
+          <div className="flex items-center px-6 pb-5">
+            {[1, 2, 3, 4].map((step, i) => {
+              const progressStep = phase <= 3 ? phase - 1 : phase === 6 ? 4 : 3
+              const isActive = step <= progressStep
+              return (
+                <div key={step} className="flex items-center flex-1 last:flex-none">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 ${
+                    isActive
+                      ? 'bg-[#EF1385] text-white'
+                      : 'border border-gray-600 text-gray-500'
+                  }`}>
+                    {step}
+                  </div>
+                  {i < 3 && <div className={`flex-1 h-px mx-1 ${isActive && step < progressStep ? 'bg-[#EF1385]' : 'bg-gray-700'}`} />}
+                </div>
+              )
+            })}
+          </div>
+        )}
 
         {/* Content - Scrollable */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto px-6 pb-6">
           {/* Phase 2: Creator */}
           {phase === 2 && (
-            <div className="space-y-4">
-              <div>
-                <label className="input-label">{t('creator.type')} *</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { type: 'individual', icon: User, labelKey: 'individual' },
-                    { type: 'group', icon: Users, labelKey: 'group' },
-                    { type: 'corporation', icon: Building2, labelKey: 'corporation' },
-                  ].map(({ type, icon: Icon, labelKey }) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => updateCreator({ creatorType: type as CreatorType })}
-                      className={`p-3 rounded-xl border-2 transition-all ${
-                        creatorData.creatorType === type
-                          ? 'border-tbt-primary bg-tbt-primary/10'
-                          : 'border-tbt-border hover:border-tbt-primary/30'
-                      }`}
-                    >
-                      <Icon className={`w-5 h-5 mx-auto mb-1 ${
-                        creatorData.creatorType === type ? 'text-tbt-primary' : 'text-tbt-muted'
-                      }`} />
-                      <p className={`text-xs font-medium ${
-                        creatorData.creatorType === type ? 'text-tbt-text' : 'text-tbt-muted'
-                      }`}>{t(`creator.${labelKey}`)}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
+            <div>
+              {/* Sub-step 1: Datos personales */}
+              {creatorSubStep === 1 && (
+                <div className="space-y-5 pt-3">
+                  {/* Tipo de creador */}
+                  <div className="flex items-center gap-6">
+                    {[
+                      { type: 'individual', label: 'Individuo' },
+                      { type: 'group', label: 'Grupo' },
+                      { type: 'corporation', label: 'Corp.' },
+                    ].map(({ type, label }) => {
+                      const isSelected = creatorData.creatorType === type
+                      return (
+                        <button
+                          key={type}
+                          type="button"
+                          onClick={() => updateCreator({ creatorType: type as CreatorType })}
+                          className="flex items-center gap-2.5"
+                        >
+                          {isSelected ? (
+                            /* Selected: large pink outline ring with white center dot */
+                            <div className="w-5 h-5 rounded-full border-2 border-[#EF1385] flex items-center justify-center flex-shrink-0">
+                              <div className="w-2.5 h-2.5 rounded-full bg-white" />
+                            </div>
+                          ) : (
+                            /* Unselected: solid dark filled circle */
+                            <div className="w-5 h-5 rounded-full bg-[#2a2a3a] flex-shrink-0" />
+                          )}
+                          <span className={`text-sm font-medium ${isSelected ? 'text-[#EF1385]' : 'text-gray-400'}`}>
+                            {label}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
 
-              {/* Layout con campos a la izquierda (2/3) y foto de perfil a la derecha (1/3) */}
-              <div className="flex gap-4">
-                {/* Campos del tipo de creador - 2/3 del ancho */}
-                <div className="w-[66%] space-y-4">
+                  {/* Individual */}
                   {creatorData.creatorType === 'individual' && (
-                    <>
-                      <div>
-                        <label className="input-label">{t('creator.legalName')}</label>
-                        <div className="relative">
-                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
-                          <input
-                            type="text"
-                            value={creatorData.legalName}
-                            onChange={(e) => updateCreator({ legalName: e.target.value })}
-                            placeholder={t('creator.legalName')}
-                            className="input pl-11"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="input-label">{t('creator.publicAlias')} *</label>
-                        <div className="relative">
-                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
-                          <input
-                            type="text"
-                            value={creatorData.publicAlias}
-                            onChange={(e) => updateCreator({ publicAlias: e.target.value })}
-                            placeholder={t('creator.publicAliasHelp')}
-                            className="input pl-11"
-                          />
-                        </div>
-                      </div>
-                    </>
+                    <div>
+                      <label className="text-white text-sm font-medium block mb-2">
+                        Nombre Legal Completo<span className="text-[#EF1385]">*</span>
+                      </label>
+                      <input type="text" value={creatorData.legalName}
+                        onChange={(e) => updateCreator({ legalName: e.target.value })}
+                        className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors text-sm"
+                      />
+                    </div>
                   )}
 
+                  {/* Grupo */}
                   {creatorData.creatorType === 'group' && (
                     <>
                       <div>
-                        <label className="input-label">{t('creator.collectiveName')} *</label>
-                        <div className="relative">
-                          <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
-                          <input
-                            type="text"
-                            value={creatorData.collectiveName}
-                            onChange={(e) => updateCreator({ collectiveName: e.target.value })}
-                            placeholder={t('creator.collectiveName')}
-                            className="input pl-11"
-                          />
-                        </div>
+                        <label className="text-white text-sm font-medium block mb-2">
+                          Nombre Colectivo<span className="text-[#EF1385]">*</span>
+                        </label>
+                        <input type="text" value={creatorData.collectiveName}
+                          onChange={(e) => updateCreator({ collectiveName: e.target.value })}
+                          className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors text-sm"
+                        />
                       </div>
                       <div>
-                        <label className="input-label">{t('creator.leadRepresentative')}</label>
-                        <div className="relative">
-                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
-                          <input
-                            type="text"
-                            value={creatorData.leadRepresentative}
-                            onChange={(e) => updateCreator({ leadRepresentative: e.target.value })}
-                            placeholder={t('creator.leadRepresentative')}
-                            className="input pl-11"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="input-label">{t('creator.publicAlias')} *</label>
-                        <div className="relative">
-                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
-                          <input
-                            type="text"
-                            value={creatorData.publicAlias}
-                            onChange={(e) => updateCreator({ publicAlias: e.target.value })}
-                            placeholder={t('creator.publicAliasHelp')}
-                            className="input pl-11"
-                          />
-                        </div>
+                        <label className="text-white text-sm font-medium block mb-2">Representante</label>
+                        <input type="text" value={creatorData.leadRepresentative}
+                          onChange={(e) => updateCreator({ leadRepresentative: e.target.value })}
+                          className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors text-sm"
+                        />
                       </div>
                     </>
                   )}
 
+                  {/* Corporación */}
                   {creatorData.creatorType === 'corporation' && (
                     <>
                       <div>
-                        <label className="input-label">{t('creator.entityName')} *</label>
-                        <div className="relative">
-                          <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
-                          <input
-                            type="text"
-                            value={creatorData.entityName}
-                            onChange={(e) => updateCreator({ entityName: e.target.value })}
-                            placeholder={t('creator.entityName')}
-                            className="input pl-11"
-                          />
-                        </div>
+                        <label className="text-white text-sm font-medium block mb-2">
+                          Nombre Entidad<span className="text-[#EF1385]">*</span>
+                        </label>
+                        <input type="text" value={creatorData.entityName}
+                          onChange={(e) => updateCreator({ entityName: e.target.value })}
+                          className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors text-sm"
+                        />
                       </div>
                       <div>
-                        <label className="input-label">{t('creator.representativeName')} *</label>
-                        <div className="relative">
-                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
-                          <input
-                            type="text"
-                            value={creatorData.representativeName}
-                            onChange={(e) => updateCreator({ representativeName: e.target.value })}
-                            placeholder={t('creator.representativeName')}
-                            className="input pl-11"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="input-label">{t('creator.corporateTitle')}</label>
-                        <div className="relative">
-                          <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
-                          <input
-                            type="text"
-                            value={creatorData.corporateTitle}
-                            onChange={(e) => updateCreator({ corporateTitle: e.target.value })}
-                            placeholder={t('creator.corporateTitle')}
-                            className="input pl-11"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="input-label">{t('creator.taxId')}</label>
-                        <div className="relative">
-                          <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
-                          <input
-                            type="text"
-                            value={creatorData.taxId}
-                            onChange={(e) => updateCreator({ taxId: e.target.value })}
-                            placeholder={t('creator.taxId')}
-                            className="input pl-11"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="input-label">{t('creator.publicAlias')} *</label>
-                        <div className="relative">
-                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
-                          <input
-                            type="text"
-                            value={creatorData.publicAlias}
-                            onChange={(e) => updateCreator({ publicAlias: e.target.value })}
-                            placeholder={t('creator.publicAliasHelp')}
-                            className="input pl-11"
-                          />
-                        </div>
+                        <label className="text-white text-sm font-medium block mb-2">
+                          Representante<span className="text-[#EF1385]">*</span>
+                        </label>
+                        <input type="text" value={creatorData.representativeName}
+                          onChange={(e) => updateCreator({ representativeName: e.target.value })}
+                          className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors text-sm"
+                        />
                       </div>
                     </>
                   )}
-                </div>
 
-                {/* Foto de perfil a la derecha - 1/3 del ancho */}
-                <div className="w-[34%] flex flex-col items-center justify-center">
-                  <label className="input-label text-center mb-2">{t('creator.profilePhoto')}</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) {
-                        updateCreator({
-                          profilePhoto: file,
-                          profilePhotoPreview: URL.createObjectURL(file)
-                        })
-                      }
-                    }}
-                    className="hidden"
-                    id="profile-photo-upload"
-                  />
-                  <label
-                    htmlFor="profile-photo-upload"
-                    className="cursor-pointer block"
-                  >
-                    {creatorData.profilePhotoPreview ? (
-                      <div className="relative w-28 h-28 rounded-full overflow-hidden border-4 border-tbt-primary/30 hover:border-tbt-primary transition-colors">
-                        <img
-                          src={creatorData.profilePhotoPreview}
-                          alt="Profile"
-                          className="w-full h-full object-cover"
-                        />
-                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                          <Camera className="w-6 h-6 text-white" />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="w-28 h-28 rounded-full bg-tbt-border/50 border-2 border-dashed border-tbt-border flex flex-col items-center justify-center hover:border-tbt-primary/50 transition-colors">
-                        <Camera className="w-8 h-8 text-tbt-muted" />
-                        <span className="text-xs text-tbt-muted mt-1">{t('creator.avatar')}</span>
-                      </div>
-                    )}
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                <label className="input-label">{t('creator.email')} *</label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
-                  <input
-                    type="email"
-                    value={creatorData.email}
-                    onChange={(e) => updateCreator({ email: e.target.value })}
-                    placeholder={t('creator.emailPlaceholder')}
-                    className="input pl-11"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="input-label">{t('creator.aboutCreator')}</label>
-                <textarea
-                  value={creatorData.aboutCreator}
-                  onChange={(e) => updateCreator({ aboutCreator: e.target.value })}
-                  placeholder={t('creator.aboutCreatorPlaceholder')}
-                  className="input min-h-[80px] resize-none"
-                />
-              </div>
-
-              <div>
-                <label className="input-label">{t('creator.website')}</label>
-                <div className="relative">
-                  <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-tbt-muted" />
-                  <input
-                    type="url"
-                    value={creatorData.socialWebsite}
-                    onChange={(e) => updateCreator({ socialWebsite: e.target.value })}
-                    placeholder={t('creator.websitePlaceholder')}
-                    className="input pl-11"
-                  />
-                </div>
-              </div>
-
-              {/* Redes Sociales - Dropdown */}
-              <div className="pt-4 border-t border-tbt-border/50">
-                <label className="input-label mb-3">{t('creator.socialMedia')}</label>
-                <div className="space-y-3">
-                  {/* Dropdown de selección de redes */}
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      { key: 'instagram', icon: Instagram, label: 'Instagram', color: 'text-pink-500' },
-                      { key: 'facebook', icon: Facebook, label: 'Facebook', color: 'text-blue-600' },
-                      { key: 'youtube', icon: Youtube, label: 'YouTube', color: 'text-red-600' },
-                      { key: 'linkedin', icon: Linkedin, label: 'LinkedIn', color: 'text-blue-500' },
-                    ].map(({ key, icon: Icon, label, color }) => (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => {
-                          const selected = creatorData.selectedSocials.includes(key)
-                            ? creatorData.selectedSocials.filter(s => s !== key)
-                            : [...creatorData.selectedSocials, key]
-                          updateCreator({ selectedSocials: selected })
-                        }}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                          creatorData.selectedSocials.includes(key)
-                            ? 'border-tbt-primary bg-tbt-primary/10'
-                            : 'border-tbt-border hover:border-tbt-primary/30'
-                        }`}
-                      >
-                        <Icon className={`w-4 h-4 ${color}`} />
-                        <span className={`text-sm ${creatorData.selectedSocials.includes(key) ? 'text-tbt-text' : 'text-tbt-muted'}`}>
-                          {label}
-                        </span>
-                      </button>
-                    ))}
+                  {/* Alias */}
+                  <div>
+                    <label className="text-white text-sm font-medium block mb-2">Alias</label>
+                    <input type="text" value={creatorData.publicAlias}
+                      onChange={(e) => updateCreator({ publicAlias: e.target.value })}
+                      className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors text-sm"
+                    />
                   </div>
 
-                  {/* Campos de URL para redes seleccionadas */}
-                  {creatorData.selectedSocials.includes('instagram') && (
-                    <div className="space-y-2">
-                      {creatorData.socialInstagram.map((url, index) => (
-                        <div key={index} className="flex items-center gap-2">
-                          <Instagram className="w-5 h-5 text-pink-500 flex-shrink-0" />
-                          <input
-                            type="url"
-                            value={url}
-                            onChange={(e) => {
-                              const newUrls = [...creatorData.socialInstagram]
-                              newUrls[index] = e.target.value
-                              updateCreator({ socialInstagram: newUrls })
-                            }}
-                            placeholder="Instagram URL"
-                            className="input flex-1"
-                          />
-                          {creatorData.socialInstagram.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newUrls = creatorData.socialInstagram.filter((_, i) => i !== index)
-                                updateCreator({ socialInstagram: newUrls })
-                              }}
-                              className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-red-500 transition-colors"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
-                          {index === creatorData.socialInstagram.length - 1 && (
-                            <button
-                              type="button"
-                              onClick={() => updateCreator({ socialInstagram: [...creatorData.socialInstagram, ''] })}
-                              className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-tbt-primary transition-colors"
-                            >
-                              <Plus className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {creatorData.selectedSocials.includes('facebook') && (
-                    <div className="space-y-2">
-                      {creatorData.socialFacebook.map((url, index) => (
-                        <div key={index} className="flex items-center gap-2">
-                          <Facebook className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                          <input
-                            type="url"
-                            value={url}
-                            onChange={(e) => {
-                              const newUrls = [...creatorData.socialFacebook]
-                              newUrls[index] = e.target.value
-                              updateCreator({ socialFacebook: newUrls })
-                            }}
-                            placeholder="Facebook URL"
-                            className="input flex-1"
-                          />
-                          {creatorData.socialFacebook.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newUrls = creatorData.socialFacebook.filter((_, i) => i !== index)
-                                updateCreator({ socialFacebook: newUrls })
-                              }}
-                              className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-red-500 transition-colors"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
-                          {index === creatorData.socialFacebook.length - 1 && (
-                            <button
-                              type="button"
-                              onClick={() => updateCreator({ socialFacebook: [...creatorData.socialFacebook, ''] })}
-                              className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-tbt-primary transition-colors"
-                            >
-                              <Plus className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {creatorData.selectedSocials.includes('youtube') && (
-                    <div className="space-y-2">
-                      {creatorData.socialYoutube.map((url, index) => (
-                        <div key={index} className="flex items-center gap-2">
-                          <Youtube className="w-5 h-5 text-red-600 flex-shrink-0" />
-                          <input
-                            type="url"
-                            value={url}
-                            onChange={(e) => {
-                              const newUrls = [...creatorData.socialYoutube]
-                              newUrls[index] = e.target.value
-                              updateCreator({ socialYoutube: newUrls })
-                            }}
-                            placeholder="YouTube URL"
-                            className="input flex-1"
-                          />
-                          {creatorData.socialYoutube.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newUrls = creatorData.socialYoutube.filter((_, i) => i !== index)
-                                updateCreator({ socialYoutube: newUrls })
-                              }}
-                              className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-red-500 transition-colors"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
-                          {index === creatorData.socialYoutube.length - 1 && (
-                            <button
-                              type="button"
-                              onClick={() => updateCreator({ socialYoutube: [...creatorData.socialYoutube, ''] })}
-                              className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-tbt-primary transition-colors"
-                            >
-                              <Plus className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {creatorData.selectedSocials.includes('linkedin') && (
-                    <div className="space-y-2">
-                      {creatorData.socialLinkedin.map((url, index) => (
-                        <div key={index} className="flex items-center gap-2">
-                          <Linkedin className="w-5 h-5 text-blue-500 flex-shrink-0" />
-                          <input
-                            type="url"
-                            value={url}
-                            onChange={(e) => {
-                              const newUrls = [...creatorData.socialLinkedin]
-                              newUrls[index] = e.target.value
-                              updateCreator({ socialLinkedin: newUrls })
-                            }}
-                            placeholder="LinkedIn URL"
-                            className="input flex-1"
-                          />
-                          {creatorData.socialLinkedin.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newUrls = creatorData.socialLinkedin.filter((_, i) => i !== index)
-                                updateCreator({ socialLinkedin: newUrls })
-                              }}
-                              className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-red-500 transition-colors"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
-                          {index === creatorData.socialLinkedin.length - 1 && (
-                            <button
-                              type="button"
-                              onClick={() => updateCreator({ socialLinkedin: [...creatorData.socialLinkedin, ''] })}
-                              className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-tbt-primary transition-colors"
-                            >
-                              <Plus className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  {/* Email */}
+                  <div>
+                    <label className="text-white text-sm font-medium block mb-2">
+                      Email<span className="text-[#EF1385]">*</span>
+                    </label>
+                    <input type="email" value={creatorData.email}
+                      onChange={(e) => updateCreator({ email: e.target.value })}
+                      className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors text-sm"
+                    />
+                  </div>
+
+                  {/* Web */}
+                  <div>
+                    <label className="text-white text-sm font-medium block mb-2">Web</label>
+                    <input type="url" value={creatorData.socialWebsite}
+                      onChange={(e) => updateCreator({ socialWebsite: e.target.value })}
+                      className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors text-sm"
+                    />
+                  </div>
+
+                  {/* Móvil */}
+                  <div>
+                    <label className="text-white text-sm font-medium block mb-2">Móvil</label>
+                    <PhoneInput
+                      value={creatorData.phone}
+                      onChange={(v) => updateCreator({ phone: v })}
+                      placeholder="300 123 4567"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* Sub-step 2: Sobre / Fotos / Links */}
+              {creatorSubStep === 2 && (
+                <div className="space-y-5 pt-3">
+                  {/* Sobre "Alias" */}
+                  <div>
+                    <div className="flex items-baseline gap-2 mb-1.5">
+                      <label className="text-white text-sm font-medium">Sobre &quot;Alias&quot;</label>
+                      <span className="text-gray-500 text-xs">opcional</span>
+                    </div>
+                    <textarea
+                      value={creatorData.aboutCreator}
+                      onChange={(e) => updateCreator({ aboutCreator: e.target.value })}
+                      rows={5}
+                      className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-2xl text-white placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors text-sm resize-none"
+                    />
+                  </div>
+
+                  {/* Foto Perfil + Firma/Marca */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <input type="file" accept="image/*" className="hidden" id="profile-photo-upload"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) updateCreator({ profilePhoto: file, profilePhotoPreview: URL.createObjectURL(file) })
+                        }}
+                      />
+                      <label htmlFor="profile-photo-upload"
+                        className="cursor-pointer flex flex-col items-center justify-center gap-2 h-36 bg-[#0a0a0f] border border-gray-700 rounded-2xl hover:border-[#EF1385] transition-colors overflow-hidden"
+                      >
+                        {creatorData.profilePhotoPreview ? (
+                          <img src={creatorData.profilePhotoPreview} alt="Profile" className="w-full h-full object-cover" />
+                        ) : (
+                          <>
+                            <span className="text-gray-400 text-sm">Foto Perfil</span>
+                            <span className="text-gray-400 text-2xl font-light leading-none">+</span>
+                          </>
+                        )}
+                      </label>
+                    </div>
+                    <div>
+                      <input type="file" accept="image/*" className="hidden" id="signature-upload"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) updateCreator({ signatureImage: file, signatureImagePreview: URL.createObjectURL(file) })
+                        }}
+                      />
+                      <label htmlFor="signature-upload"
+                        className="cursor-pointer flex flex-col items-center justify-center gap-2 h-36 bg-[#0a0a0f] border border-gray-700 rounded-2xl hover:border-[#EF1385] transition-colors overflow-hidden"
+                      >
+                        {creatorData.signatureImagePreview ? (
+                          <img src={creatorData.signatureImagePreview} alt="Firma" className="w-full h-full object-cover" />
+                        ) : (
+                          <>
+                            <span className="text-gray-400 text-sm">Firma/Marca</span>
+                            <span className="text-gray-400 text-2xl font-light leading-none">+</span>
+                          </>
+                        )}
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Links */}
+                  <div>
+                    <label className="text-white text-sm font-medium block mb-3">Links</label>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <Facebook className="w-5 h-5 text-[#1877F2] flex-shrink-0" />
+                        <input type="url" value={creatorData.socialFacebook[0]}
+                          onChange={(e) => updateCreator({ socialFacebook: [e.target.value] })}
+                          placeholder="facebook.com/arte.gomez"
+                          className="flex-1 px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors text-sm"
+                        />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="white">
+                          <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.27 6.27 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.19 8.19 0 004.79 1.53V6.77a4.85 4.85 0 01-1.02-.08z"/>
+                        </svg>
+                        <input type="url" value={creatorData.socialTikTok}
+                          onChange={(e) => updateCreator({ socialTikTok: e.target.value })}
+                          placeholder="tiktok.com/arte-gomez"
+                          className="flex-1 px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
+
+
 
           {/* Phase 3: La Obra */}
           {phase === 3 && (
-            <div className="space-y-4">
-
-              <div>
-                <label className="input-label flex items-center gap-2">
-                  <FileText className="w-4 h-4" />
-                  {t('work.title')} *
-                </label>
-                <input
-                  type="text"
-                  value={workData.title}
-                  onChange={(e) => updateWork({ title: e.target.value })}
-                  placeholder={t('work.title')}
-                  className="input"
-                />
-              </div>
-
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="input-label flex items-center gap-2">
-                    <Layers className="w-4 h-4" />
-                    {t('work.category')} *
-                  </label>
-                  <select
-                    value={workData.category}
-                    onChange={(e) => updateWork({ category: e.target.value })}
-                    className="input"
-                  >
-                    <option value="">{t('work.selectCategory')}</option>
-                    {WORK_CATEGORY_KEYS.map(catKey => (
-                      <option key={catKey} value={tCategories(catKey)}>{tCategories(catKey)}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="input-label flex items-center gap-2">
-                    <Palette className="w-4 h-4" />
-                    {t('work.primaryMaterial')}
-                  </label>
-                  <input
-                    type="text"
-                    value={workData.primaryMaterial}
-                    onChange={(e) => updateWork({ primaryMaterial: e.target.value })}
-                    placeholder={t('work.primaryMaterialPlaceholder')}
-                    className="input"
-                  />
-                </div>
-              </div>
-
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="input-label flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
-                    {t('work.creationDate')}
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="date"
-                      value={workData.creationDate}
-                      onChange={(e) => updateWork({ creationDate: e.target.value })}
-                      className="input cursor-pointer w-full [&::-webkit-calendar-picker-indicator]:opacity-100 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:p-1 [&::-webkit-calendar-picker-indicator]:rounded [&::-webkit-calendar-picker-indicator]:hover:bg-tbt-primary/20"
-                      onClick={(e) => (e.target as HTMLInputElement).showPicker?.()}
+            <div>
+              {/* Sub-step 1: Info básica */}
+              {workSubStep === 1 && (
+                <div className="space-y-5 pt-3">
+                  <div>
+                    <label className="text-white text-sm font-medium block mb-2">
+                      Título<span className="text-[#EF1385]">*</span>
+                    </label>
+                    <input type="text" value={workData.title}
+                      onChange={(e) => updateWork({ title: e.target.value })}
+                      className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors text-sm"
                     />
                   </div>
-                </div>
-                <div>
-                  <label className="input-label flex items-center gap-2">
-                    <Eye className="w-4 h-4" />
-                    {t('work.status')}
-                  </label>
-                  <div className="space-y-2 mt-2">
-                    {[
-                      { value: 'publicado', labelKey: 'published' },
-                      { value: 'privado', labelKey: 'private' },
-                    ].map(({ value, labelKey }) => (
-                      <label key={value} className="flex items-center gap-3 cursor-pointer group">
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                          workData.workStatus === value 
-                            ? 'border-tbt-primary bg-tbt-primary' 
-                            : 'border-tbt-border group-hover:border-tbt-primary/50'
-                        }`}>
-                          {workData.workStatus === value && (
-                            <div className="w-2 h-2 rounded-full bg-white" />
-                          )}
-                        </div>
-                        <span className={`text-sm ${
-                          workData.workStatus === value ? 'text-tbt-text font-medium' : 'text-tbt-muted'
-                        }`}>{t(`work.${labelKey}`)}</span>
-                        <input
-                          type="radio"
-                          name="workStatus"
-                          value={value}
-                          checked={workData.workStatus === value}
-                          onChange={(e) => updateWork({ workStatus: e.target.value as typeof workData.workStatus })}
-                          className="sr-only"
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
 
-              <div>
-                <label className="input-label flex items-center gap-2">
-                  <LinkIcon className="w-4 h-4" />
-                  {t('work.referenceLinks')}
-                </label>
-                <div className="space-y-2">
-                  {workData.assetLinks.map((link, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <input
-                        type="url"
-                        value={link}
-                        onChange={(e) => {
-                          const newLinks = [...workData.assetLinks]
-                          newLinks[i] = e.target.value
-                          updateWork({ assetLinks: newLinks })
-                        }}
-                        placeholder={t('work.referenceLinkPlaceholder', { num: i + 1 })}
-                        className="input flex-1"
-                      />
-                      {workData.assetLinks.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newLinks = workData.assetLinks.filter((_, index) => index !== i)
-                            updateWork({ assetLinks: newLinks })
-                          }}
-                          className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-red-500 transition-colors"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                      {i === workData.assetLinks.length - 1 && (
-                        <button
-                          type="button"
-                          onClick={() => updateWork({ assetLinks: [...workData.assetLinks, ''] })}
-                          className="w-8 h-8 flex items-center justify-center text-tbt-muted hover:text-tbt-primary transition-colors"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="input-label flex items-center gap-2">
-                  <FileText className="w-4 h-4" />
-                  {t('work.aboutWork')}
-                </label>
-                <textarea
-                  value={workData.aboutWork}
-                  onChange={(e) => updateWork({ aboutWork: e.target.value })}
-                  placeholder={t('work.aboutWorkPlaceholder')}
-                  className="input min-h-[100px] resize-none"
-                />
-              </div>
-
-              {/* Media Section - Clean Card Design */}
-              <div className="bg-tbt-bg/30 rounded-2xl p-4 border border-tbt-border/30">
-                {/* Image - First */}
-                <div className="mb-4">
-                  <p className="text-sm text-tbt-muted mb-3">{t('work.mainImage')}</p>
-                  <input
-                    type="file"
-                    accept={ALLOWED_IMAGE_EXTENSIONS}
-                    onChange={handleFileSelect}
-                    className="hidden"
-                    id="media-upload"
-                  />
-                  {workData.mediaPreview ? (
-                    <div className="relative w-full">
-                      <img 
-                        src={workData.mediaPreview} 
-                        alt="Preview" 
-                        className="w-full max-w-md mx-auto aspect-[4/3] rounded-xl object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => updateWork({ mediaFile: null, mediaPreview: '' })}
-                        className="absolute top-3 right-3 w-8 h-8 rounded-full bg-tbt-bg/80 backdrop-blur-sm flex items-center justify-center hover:bg-red-500 transition-colors"
-                      >
-                        <X className="w-4 h-4 text-tbt-text" />
-                      </button>
-                    </div>
-                  ) : (
-                    <label
-                      htmlFor="media-upload"
-                      className="w-full max-w-md mx-auto aspect-[4/3] bg-tbt-border/30 rounded-xl hover:bg-tbt-border/50 transition-colors flex flex-col items-center justify-center cursor-pointer border-2 border-dashed border-tbt-border"
-                    >
-                      <Camera className="w-8 h-8 text-tbt-muted mb-2" />
-                      <span className="text-sm text-tbt-muted">{t('work.uploadImage')}</span>
+                  <div>
+                    <label className="text-white text-sm font-medium block mb-2">
+                      Categoría<span className="text-[#EF1385]">*</span>
                     </label>
-                  )}
-                </div>
-
-                {/* Audio/Video - After Image */}
-                <div className="pt-3 border-t border-tbt-border/20">
-                  <p className="text-sm text-tbt-muted mb-3">{t('work.tellAboutWork')}</p>
-                  
-                  <input
-                    type="file"
-                    accept="audio/*,video/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) {
-                        const isVideo = file.type.startsWith('video/')
-                        updateWork({
-                          audioVideoFile: file,
-                          audioVideoPreview: URL.createObjectURL(file),
-                          audioVideoType: isVideo ? 'video' : 'audio'
-                        })
-                      }
-                    }}
-                    className="hidden"
-                    id="audio-video-upload"
-                  />
-                  
-                  {workData.audioVideoPreview ? (
-                    <div className="relative">
-                      {workData.audioVideoType === 'video' ? (
-                        <video 
-                          src={workData.audioVideoPreview} 
-                          controls 
-                          className="w-full rounded-lg max-h-28"
-                        />
-                      ) : (
-                        <audio 
-                          src={workData.audioVideoPreview} 
-                          controls 
-                          className="w-full"
-                        />
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => updateWork({ 
-                          audioVideoFile: null, 
-                          audioVideoPreview: '', 
-                          audioVideoType: '' 
-                        })}
-                        className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ) : isRecording ? (
-                    <div className="text-center py-4">
-                      <div className="inline-flex items-center gap-2 px-4 py-2 bg-red-500/10 rounded-full mb-3">
-                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                        <span className="text-red-500 text-sm font-medium">{recordingTime}s</span>
-                      </div>
-                      <div className="w-full bg-tbt-border/50 rounded-full h-1 mb-3">
-                        <div 
-                          className="bg-red-500 h-1 rounded-full transition-all" 
-                          style={{ width: `${(recordingTime / 23) * 100}%` }}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={stopRecording}
-                        className="text-sm text-red-500 hover:text-red-400 transition-colors"
-                      >
-                        ⏹ {t('work.stop')}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex gap-2">
-                      <label
-                        htmlFor="audio-video-upload"
-                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-tbt-border/30 rounded-xl hover:bg-tbt-border/50 transition-colors cursor-pointer"
-                      >
-                        <Upload className="w-4 h-4 text-tbt-muted" />
-                        <span className="text-sm text-tbt-muted">{t('work.file')}</span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => startRecording('video')}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-tbt-border/30 rounded-xl hover:bg-red-500/10 hover:text-red-400 transition-colors"
-                      >
-                        <Video className="w-4 h-4" />
-                        <span className="text-sm">{t('work.video')}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => startRecording('audio')}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-tbt-border/30 rounded-xl hover:bg-tbt-primary/10 transition-colors"
-                      >
-                        <Mic className="w-4 h-4" />
-                        <span className="text-sm">{t('work.audio')}</span>
-                      </button>
-                    </div>
-                  )}
-                  <p className="text-xs text-tbt-muted/60 mt-2 text-center">{t('work.maxDuration')}</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Phase 4: CommPro - Simplified */}
-          {phase === 4 && (
-            <div className="space-y-4">
-
-              <div className="p-4 rounded-xl bg-tbt-bg">
-                <h4 className="font-medium text-tbt-text mb-3 flex items-center gap-2">
-                  <DollarSign className="w-5 h-5 text-tbt-gold" />
-                  {t('commerce.valuation')}
-                </h4>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="input-label">{t('commerce.marketPrice')} *</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-tbt-muted">$</span>
-                      <input
-                        type="number"
-                        value={commProData.marketPrice}
-                        onChange={(e) => updateCommPro({ marketPrice: e.target.value })}
-                        placeholder="0.00"
-                        className="input pl-8"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="input-label">{t('commerce.currency')}</label>
-                    <select
-                      value={commProData.currency}
-                      onChange={(e) => updateCommPro({ currency: e.target.value })}
-                      className="input"
+                    <select value={workData.category}
+                      onChange={(e) => updateWork({ category: e.target.value })}
+                      className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white focus:outline-none focus:border-[#EF1385] transition-colors text-sm appearance-none"
+                      style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 14px center' }}
                     >
-                      {CURRENCIES.map(c => (
-                        <option key={c} value={c}>{c}</option>
+                      <option value=""></option>
+                      {WORK_CATEGORY_KEYS.map(catKey => (
+                        <option key={catKey} value={tCategories(catKey)}>{tCategories(catKey)}</option>
                       ))}
                     </select>
                   </div>
-                </div>
-              </div>
 
-              {/* Royalty Architecture */}
-              <div className="p-4 rounded-xl bg-tbt-bg">
-                <h4 className="font-medium text-tbt-text mb-3 flex items-center gap-2">
-                  <CreditCard className="w-5 h-5 text-tbt-primary" />
-                  {t('commerce.royaltyArchitecture')}
-                </h4>
-                
-                {/* Royalty Type Toggle */}
-                <div className="mb-4">
-                  <label className="input-label mb-2">{t('commerce.royaltyType')}</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { value: 'none', labelKey: 'none' },
-                      { value: 'percentage', labelKey: 'percentage' },
-                      { value: 'fixed', labelKey: 'fixed' },
-                    ].map(({ value, labelKey }) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => updateCommPro({ royaltyType: value as typeof commProData.royaltyType })}
-                        className={`p-3 rounded-xl border-2 transition-all text-sm ${
-                          commProData.royaltyType === value
-                            ? 'border-tbt-primary bg-tbt-primary/10 text-tbt-text'
-                            : 'border-tbt-border hover:border-tbt-primary/30 text-tbt-muted'
-                        }`}
-                      >
-                        {t(`commerce.${labelKey}`)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Royalty Value - Only show if not 'none' */}
-                {commProData.royaltyType !== 'none' && (
-                  <div>
-                    <label className="input-label">
-                      {commProData.royaltyType === 'percentage' 
-                        ? t('commerce.royaltyPercentage')
-                        : `${t('commerce.royaltyFixed')} (${commProData.currency})`
-                      }
-                    </label>
-                    <div className="relative">
-                      {commProData.royaltyType === 'percentage' ? (
-                        <>
-                          <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={commProData.royaltyValue}
-                            onChange={(e) => {
-                              const val = Math.min(100, Math.max(0, Number(e.target.value)))
-                              updateCommPro({ royaltyValue: String(val) })
-                            }}
-                            placeholder="10"
-                            className="input pr-8"
-                          />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-tbt-muted">%</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-tbt-muted">$</span>
-                          <input
-                            type="number"
-                            min="0"
-                            value={commProData.royaltyValue}
-                            onChange={(e) => updateCommPro({ royaltyValue: e.target.value })}
-                            placeholder="0.00"
-                            className="input pl-8"
-                          />
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="p-4 rounded-xl bg-tbt-bg">
-                <h4 className="font-medium text-tbt-text mb-3 flex items-center gap-2">
-                  <Shield className="w-5 h-5 text-tbt-primary" />
-                  {t('commerce.plagiarismScan')}
-                </h4>
-
-                {commProData.scanStatus === 'pending' && (
-                  <div className="text-center py-4">
-                    <button
-                      onClick={runPlagiarismScan}
-                      disabled={isLoading}
-                      className="btn-primary"
-                    >
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          {t('commerce.scanning')}
-                        </>
-                      ) : (
-                        <>
-                          <Shield className="w-5 h-5" />
-                          {t('commerce.startScan')}
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
-
-                {commProData.scanStatus === 'clean' && (
-                  <div className="flex items-center gap-3 p-3 rounded-lg bg-tbt-success/10 border border-tbt-success/20">
-                    <Check className="w-5 h-5 text-tbt-success" />
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <p className="font-medium text-tbt-success">{t('commerce.scanClean')}</p>
-                      <p className="text-xs text-tbt-muted">{t('commerce.noConflicts')}</p>
+                      <label className="text-white text-sm font-medium block mb-2">
+                        Técnica<span className="text-[#EF1385]">*</span>
+                      </label>
+                      <input type="text" value={workData.primaryMaterial}
+                        onChange={(e) => updateWork({ primaryMaterial: e.target.value })}
+                        className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-white text-sm font-medium block mb-2">
+                        Dim<span className="text-[#EF1385]">*</span>
+                      </label>
+                      <input type="text" value={workData.dimensions}
+                        onChange={(e) => updateWork({ dimensions: e.target.value })}
+                        placeholder="100x80cm"
+                        className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors text-sm"
+                      />
                     </div>
                   </div>
-                )}
 
-                {commProData.scanStatus === 'conflict' && (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3 p-3 rounded-lg bg-tbt-warning/10 border border-tbt-warning/20">
-                      <AlertCircle className="w-5 h-5 text-tbt-warning" />
-                      <div>
-                        <p className="font-medium text-tbt-warning">{t('commerce.matchDetected')}</p>
-                        <p className="text-xs text-tbt-muted">{t('commerce.similarity')}: {commProData.conflictSimilarity}%</p>
-                      </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-white text-sm font-medium block mb-2">
+                        Año<span className="text-[#EF1385]">*</span>
+                      </label>
+                      <input type="date" value={workData.creationDate}
+                        onChange={(e) => updateWork({ creationDate: e.target.value })}
+                        className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white focus:outline-none focus:border-[#EF1385] transition-colors text-sm"
+                      />
                     </div>
+                    <div>
+                      <label className="text-white text-sm font-medium block mb-2">
+                        Estado<span className="text-[#EF1385]">*</span>
+                      </label>
+                      <select value={workData.workStatus}
+                        onChange={(e) => updateWork({ workStatus: e.target.value as 'publicado' | 'privado' })}
+                        className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white focus:outline-none focus:border-[#EF1385] transition-colors text-sm appearance-none"
+                        style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 14px center' }}
+                      >
+                        <option value="publicado">Publicado</option>
+                        <option value="privado">Privado</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-white text-sm font-medium block mb-2">Links de Referencia</label>
                     <div className="space-y-2">
-                      {[
-                        { type: 'original', labelKey: 'originalCreator' },
-                        { type: 'derivative', labelKey: 'remix' },
-                        { type: 'authorized_edition', labelKey: 'limitedEdition' },
-                      ].map(({ type, labelKey }) => (
-                        <label
-                          key={type}
-                          className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-all ${
-                            commProData.originalityDeclaration === type
-                              ? 'bg-tbt-primary/10 border border-tbt-primary/30'
-                              : 'bg-tbt-card hover:bg-tbt-border/50'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="originality"
-                            checked={commProData.originalityDeclaration === type}
-                            onChange={() => updateCommPro({ originalityDeclaration: type as OriginalityType })}
-                            className="w-4 h-4 text-tbt-primary"
-                          />
-                          <span className="text-sm text-tbt-text">{t(`commerce.${labelKey}`)}</span>
-                        </label>
+                      {workData.assetLinks.map((link, i) => (
+                        <input key={i} type="url" value={link}
+                          onChange={(e) => {
+                            const newLinks = [...workData.assetLinks]
+                            newLinks[i] = e.target.value
+                            updateWork({ assetLinks: newLinks })
+                          }}
+                          placeholder={`referencialink/${i + 1}`}
+                          className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors text-sm"
+                        />
                       ))}
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Sub-step 2: Imagen + Descripción */}
+              {workSubStep === 2 && (
+                <div className="space-y-5 pt-3">
+                  <input type="file" accept={ALLOWED_IMAGE_EXTENSIONS}
+                    onChange={handleFileSelect} className="hidden" id="media-upload"
+                  />
+                  <label htmlFor="media-upload"
+                    className="block w-full aspect-[4/3] bg-[#0a0a0f] border border-gray-700 rounded-2xl overflow-hidden cursor-pointer hover:border-[#EF1385] transition-colors"
+                  >
+                    {workData.mediaPreview ? (
+                      <img src={workData.mediaPreview} alt="Preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center gap-3">
+                        <span className="text-gray-400 text-sm text-center px-4">Imagen Principal de la obra</span>
+                        <span className="text-gray-400 text-3xl font-light leading-none">+</span>
+                      </div>
+                    )}
+                  </label>
+                  {workData.mediaPreview && (
+                    <button type="button"
+                      onClick={() => updateWork({ mediaFile: null, mediaPreview: '' })}
+                      className="text-xs text-gray-500 hover:text-[#EF1385] transition-colors"
+                    >
+                      Eliminar imagen
+                    </button>
+                  )}
+
+                  <div>
+                    <label className="text-white text-sm font-medium block mb-2">
+                      Descripción<span className="text-[#EF1385]">*</span>
+                    </label>
+                    <textarea value={workData.aboutWork}
+                      onChange={(e) => updateWork({ aboutWork: e.target.value })}
+                      rows={4}
+                      className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-2xl text-white placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors text-sm resize-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Sub-step 3: Audio / Video */}
+              {workSubStep === 3 && (
+                <div className="space-y-6 pt-3">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-white text-sm font-medium">Cuentanos sobre la obra</span>
+                    <span className="text-gray-500 text-xs">Opcional</span>
+                  </div>
+
+                  {/* Audio */}
+                  <div>
+                    <p className="text-white text-sm mb-3">Audio -  1 Min</p>
+                    <input type="file" accept="audio/*" className="hidden" id="audio-upload"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) updateWork({ audioVideoFile: file, audioVideoPreview: URL.createObjectURL(file), audioVideoType: 'audio' })
+                      }}
+                    />
+                    <div className="w-full min-h-[80px] bg-[#0a0a0f] border border-gray-700 rounded-2xl flex flex-col items-center justify-end p-3 gap-3">
+                      {workData.audioVideoPreview && workData.audioVideoType === 'audio' ? (
+                        <div className="relative w-full">
+                          <audio src={workData.audioVideoPreview} controls className="w-full" />
+                          <button type="button"
+                            onClick={() => updateWork({ audioVideoFile: null, audioVideoPreview: '', audioVideoType: '' })}
+                            className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs"
+                          >×</button>
+                        </div>
+                      ) : isRecording && workData.audioVideoType !== 'video' ? (
+                        <div className="flex items-center gap-3 w-full px-2">
+                          <div className="w-2 h-2 rounded-full bg-[#EF1385] animate-pulse" />
+                          <span className="text-[#EF1385] text-sm flex-1">{recordingTime}s</span>
+                          <button type="button" onClick={stopRecording} className="text-sm text-gray-400">⏹</button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2 w-full">
+                          <button type="button" onClick={() => startRecording('audio')}
+                            className="flex-1 flex items-center justify-center py-2.5 border border-[#EF1385] rounded-full hover:bg-[#EF1385]/10 transition-colors"
+                          >
+                            <svg className="w-5 h-5 text-[#EF1385]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                            </svg>
+                          </button>
+                          <label htmlFor="audio-upload"
+                            className="flex-1 flex items-center justify-center py-2.5 border border-gray-700 rounded-full hover:border-gray-500 transition-colors cursor-pointer"
+                          >
+                            <Upload className="w-4 h-4 text-gray-400" />
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Video */}
+                  <div>
+                    <p className="text-white text-sm mb-3">Video -  30 Seg</p>
+                    <input type="file" accept="video/*" className="hidden" id="video-upload"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) updateWork({ audioVideoFile: file, audioVideoPreview: URL.createObjectURL(file), audioVideoType: 'video' })
+                      }}
+                    />
+                    <div className="w-full min-h-[160px] bg-[#0a0a0f] border border-gray-700 rounded-2xl flex flex-col justify-end p-3 gap-3">
+                      {workData.audioVideoPreview && workData.audioVideoType === 'video' ? (
+                        <div className="relative">
+                          <video src={workData.audioVideoPreview} controls className="w-full rounded-xl max-h-32" />
+                          <button type="button"
+                            onClick={() => updateWork({ audioVideoFile: null, audioVideoPreview: '', audioVideoType: '' })}
+                            className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs"
+                          >×</button>
+                        </div>
+                      ) : isRecording && workData.audioVideoType === 'video' ? (
+                        <div className="flex items-center gap-3">
+                          <div className="w-2 h-2 rounded-full bg-[#EF1385] animate-pulse" />
+                          <span className="text-[#EF1385] text-sm">{recordingTime}s</span>
+                          <button type="button" onClick={stopRecording} className="text-sm text-gray-400 ml-auto">⏹ Detener</button>
+                        </div>
+                      ) : null}
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => startRecording('video')}
+                          className="flex-1 flex items-center justify-center py-2.5 bg-[#0a0a0f] border border-gray-700 rounded-full hover:border-[#EF1385] transition-colors"
+                        >
+                          <span className="text-gray-400 text-sm">Grabar</span>
+                        </button>
+                        <label htmlFor="video-upload"
+                          className="flex-1 flex items-center justify-center py-2.5 border border-gray-700 rounded-full hover:border-gray-500 transition-colors cursor-pointer"
+                        >
+                          <Upload className="w-4 h-4 text-gray-400" />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Phase 4: AAi Verificación - Sub-step 1: Plagio Scan */}
+          {phase === 4 && phase4SubStep === 1 && (
+            <div className="space-y-5 pt-3">
+              <div className="flex items-center gap-2 mb-3">
+                <Shield className="w-4 h-4 text-[#EF1385]" />
+                <span className="text-white text-sm font-semibold tracking-wide uppercase">PLAGIO SCAN</span>
+                <span className="text-gray-500 text-xs">(i)</span>
+              </div>
+
+              {/* Pending: Go button */}
+              {commProData.scanStatus === 'pending' && !isLoading && (
+                <button
+                  type="button"
+                  onClick={runPlagiarismScan}
+                  className="px-6 py-2 rounded-full border border-[#EF1385] text-[#EF1385] text-sm font-semibold hover:bg-[#EF1385]/10 transition-colors"
+                >
+                  Go
+                </button>
+              )}
+
+              {/* Scanning: animated lime bar */}
+              {isLoading && (
+                <div className="w-full bg-[#1a1a28] rounded-full h-10 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-[#BBFFA6] flex items-center px-4 transition-all duration-500"
+                    style={{ width: `${Math.max(scanProgress, 5)}%` }}
+                  >
+                    <span className="text-[#1a1a28] text-sm font-bold">{Math.round(scanProgress)}%</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Clean result */}
+              {commProData.scanStatus === 'clean' && !isLoading && (
+                <div>
+                  <div className="w-full bg-[#1a1a28] rounded-full h-10 overflow-hidden mb-3">
+                    <div className="h-full w-full rounded-full bg-[#BBFFA6] flex items-center px-4">
+                      <span className="text-[#1a1a28] text-sm font-bold">100%</span>
+                    </div>
+                  </div>
+                  <p className="text-[#EF1385] text-sm font-bold">Felicidades</p>
+                  <p className="text-gray-400 text-sm">No se a encontrado evidencia de plagio</p>
+                </div>
+              )}
+
+              {/* Conflict result */}
+              {commProData.scanStatus === 'conflict' && !isLoading && (
+                <div className="space-y-3">
+                  <div className="w-full bg-[#1a1a28] rounded-full h-10 overflow-hidden">
+                    <div className="h-full w-full rounded-full bg-[#BBFFA6] flex items-center px-4">
+                      <span className="text-[#1a1a28] text-sm font-bold">100%</span>
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <p className="text-amber-400 text-sm font-bold flex items-center gap-1">
+                      <AlertCircle className="w-4 h-4" /> Coincidencia Detectada
+                    </p>
+                    <p className="text-gray-400 text-sm">Semejanza: {commProData.conflictSimilarity}%</p>
+                  </div>
+                  <div className="space-y-2 mt-1">
+                    {[
+                      { type: 'original', label: 'Soy el creador original.' },
+                      { type: 'derivative', label: 'Es una remezcla/transformación' },
+                      { type: 'authorized_edition', label: 'Edición limitada de mi obra' },
+                    ].map(({ type, label }) => (
+                      <label key={type} className="flex items-center gap-3 cursor-pointer">
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                          commProData.originalityDeclaration === type ? 'border-[#EF1385]' : 'border-gray-600'
+                        }`}>
+                          {commProData.originalityDeclaration === type && (
+                            <div className="w-2.5 h-2.5 rounded-full bg-[#EF1385]" />
+                          )}
+                        </div>
+                        <input type="radio" name="originality" className="hidden"
+                          checked={commProData.originalityDeclaration === type}
+                          onChange={() => updateCommPro({ originalityDeclaration: type as OriginalityType })}
+                        />
+                        <span className="text-white text-sm">{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="mt-3">
+                    <label className="text-white text-sm font-medium block mb-2">Agrega mas detalles</label>
+                    <textarea
+                      value={commProData.derivativeReference}
+                      onChange={(e) => updateCommPro({ derivativeReference: e.target.value })}
+                      rows={4}
+                      className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-2xl text-white text-sm placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors resize-none"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Phase 4: AAi Verificación - Sub-step 2: Guardia Comercial */}
+          {phase === 4 && phase4SubStep === 2 && (
+            <div className="space-y-5 pt-3">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-6 h-6 rounded-full border border-[#EF1385] flex items-center justify-center flex-shrink-0">
+                  <DollarSign className="w-3.5 h-3.5 text-[#EF1385]" />
+                </div>
+                <span className="text-white text-sm font-semibold">Guardia Comercial</span>
+                <span className="text-gray-400 text-xs">opcional</span>
+                <span className="text-gray-500 text-xs">(i)</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-white text-sm font-medium block mb-2">Precio de obra</label>
+                  <input
+                    type="number"
+                    value={commProData.marketPrice}
+                    onChange={(e) => updateCommPro({ marketPrice: e.target.value })}
+                    placeholder="0"
+                    className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white text-sm placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-white text-sm font-medium block mb-2">Moneda<span className="text-[#EF1385]">*</span></label>
+                  <select
+                    value={commProData.currency}
+                    onChange={(e) => updateCommPro({ currency: e.target.value })}
+                    className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white text-sm focus:outline-none focus:border-[#EF1385] transition-colors appearance-none"
+                    style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}
+                  >
+                    {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-white text-sm font-medium block mb-2">Regalia <span className="text-gray-500 text-xs">(i)</span></label>
+                <div className="flex items-center gap-3">
+                  <select
+                    value={commProData.royaltyType}
+                    onChange={(e) => updateCommPro({ royaltyType: e.target.value as typeof commProData.royaltyType })}
+                    className="flex-1 px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white text-sm focus:outline-none focus:border-[#EF1385] transition-colors appearance-none"
+                    style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}
+                  >
+                    <option value="none">Ninguna</option>
+                    <option value="percentage">Porcentaje</option>
+                    <option value="fixed">Precio Fijo</option>
+                  </select>
+
+                  {commProData.royaltyType === 'percentage' && (
+                    <div className="flex items-center gap-1 px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full min-w-[90px]">
+                      <input
+                        type="number" min="0" max="100"
+                        value={commProData.royaltyValue}
+                        onChange={(e) => updateCommPro({ royaltyValue: String(Math.min(100, Math.max(0, Number(e.target.value)))) })}
+                        className="w-12 bg-transparent text-white text-sm focus:outline-none text-right"
+                      />
+                      <span className="text-gray-400 text-sm">%</span>
+                    </div>
+                  )}
+                </div>
+
+                {commProData.royaltyType === 'fixed' && (
+                  <div className="flex items-center gap-3 mt-3">
+                    <div className="flex items-center gap-2 px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full flex-1">
+                      <span className="text-gray-400 text-sm">$</span>
+                      <input
+                        type="number" min="0"
+                        value={commProData.royaltyValue}
+                        onChange={(e) => updateCommPro({ royaltyValue: e.target.value })}
+                        className="flex-1 bg-transparent text-white text-sm focus:outline-none"
+                      />
+                    </div>
+                    <select
+                      value={commProData.currency}
+                      onChange={(e) => updateCommPro({ currency: e.target.value })}
+                      className="px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-full text-white text-sm focus:outline-none focus:border-[#EF1385] transition-colors appearance-none"
+                      style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center', paddingRight: '2rem' }}
+                    >
+                      {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
                   </div>
                 )}
               </div>
             </div>
           )}
 
-          {/* Phase 5: Context - Simplified */}
+          {/* Phase 5: AAi Verificación - Context + Resumen + Firma */}
           {phase === 5 && (
-            <div className="space-y-4">
-              <div className="text-left mb-4">
-                <h3 className="text-xl font-semibold text-tbt-text">{t('context.title')}</h3>
-              </div>
+            <div className="space-y-5 pt-3">
 
-              {!contextData.aiSummary ? (
-                <div className="text-center py-6">
-                  <Sparkles className="w-12 h-12 text-tbt-primary mx-auto mb-4" />
-                  <p className="text-tbt-muted mb-4">
-                    {t('context.generateIntro')}
-                  </p>
-                  <button
-                    onClick={generateContext}
-                    disabled={isLoading}
-                    className="btn-primary"
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        {t('context.generating')}
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-5 h-5" />
-                        {t('context.generateButton')}
-                      </>
-                    )}
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    <div className="p-3 rounded-lg bg-tbt-bg">
-                      <p className="text-xs text-tbt-muted mb-1">📍 {t('context.location')}</p>
-                      <p className="text-sm text-tbt-text">{contextData.location}</p>
+              {/* Sub-step 1: Context Master */}
+              {phase5SubStep === 1 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center">
+                      <Sparkles className="w-4 h-4 text-[#EF1385]" />
                     </div>
-                    <div className="p-3 rounded-lg bg-tbt-bg">
-                      <p className="text-xs text-tbt-muted mb-1">🌤️ {t('context.weather')}</p>
-                      <p className="text-sm text-tbt-text">{contextData.weather}</p>
+                    <span className="text-white text-sm font-semibold">Context Master</span>
+                    <span className="text-gray-400 text-xs">opcional</span>
+                    <span className="text-gray-500 text-xs">(i)</span>
+                  </div>
+
+                  {/* Pending: Go button */}
+                  {!contextData.aiSummary && !isLoading && (
+                    <button
+                      type="button"
+                      onClick={generateContext}
+                      className="px-6 py-2 rounded-full border border-[#EF1385] text-[#EF1385] text-sm font-semibold hover:bg-[#EF1385]/10 transition-colors"
+                    >
+                      Go
+                    </button>
+                  )}
+
+                  {/* Generating: lime bar */}
+                  {isLoading && (
+                    <div className="w-full bg-[#1a1a28] rounded-full h-10 overflow-hidden">
+                      <div className="h-full rounded-full bg-[#BBFFA6] animate-pulse w-3/4 flex items-center px-4">
+                        <span className="text-[#1a1a28] text-sm font-bold">Generando...</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Done: full bar + editable textarea */}
+                  {contextData.aiSummary && !isLoading && (
+                    <div className="space-y-3">
+                      <div className="w-full bg-[#1a1a28] rounded-full h-10 overflow-hidden">
+                        <div className="h-full w-full rounded-full bg-[#BBFFA6] flex items-center px-4">
+                          <span className="text-[#1a1a28] text-sm font-bold">100%</span>
+                        </div>
+                      </div>
+                      <label className="text-white text-sm font-medium block mt-3">Revisa / edita este avanzado contexto</label>
+                      <textarea
+                        value={contextData.userEditedSummary}
+                        onChange={(e) => updateContext({ userEditedSummary: e.target.value })}
+                        disabled={contextData.isSigned}
+                        rows={8}
+                        className="w-full px-4 py-3 bg-[#0a0a0f] border border-gray-700 rounded-2xl text-white text-sm placeholder:text-gray-600 focus:outline-none focus:border-[#EF1385] transition-colors resize-none disabled:opacity-60"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sub-step 2: Resumen + Firma */}
+              {phase5SubStep === 2 && (
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-white text-base font-bold text-center mb-4">Resumen</h3>
+                    <div className="space-y-1 text-sm">
+                      <p className="text-white">{creatorData.publicAlias || creatorData.legalName}</p>
+                      <p className="text-gray-300">obra: {workData.title}</p>
+                      <p className="text-gray-300">Tipo: {workData.category}</p>
+                      <p className="text-gray-300">valor: {commProData.marketPrice} {commProData.currency}</p>
+                      <p className="text-gray-300">Regalia: {
+                        commProData.royaltyType === 'none' ? 'Ninguna' :
+                        commProData.royaltyType === 'percentage' ? `${commProData.royaltyValue}%` :
+                        `$${commProData.royaltyValue} ${commProData.currency}`
+                      }</p>
                     </div>
                   </div>
 
                   <div>
-                    <label className="input-label">{t('context.contextSummary')} {contextData.isSigned ? t('context.locked') : t('context.editable')}</label>
-                    <textarea
-                      value={contextData.userEditedSummary}
-                      onChange={(e) => updateContext({ userEditedSummary: e.target.value })}
-                      className="input min-h-[150px] resize-none text-sm"
-                      disabled={contextData.isSigned}
-                    />
-                  </div>
-
-                  {/* Firma Digital Section */}
-                  <div className="p-4 rounded-xl border border-tbt-gold/30 bg-tbt-gold/5">
-                    <h4 className="font-medium text-tbt-text mb-3 flex items-center gap-2">
-                      <Shield className="w-5 h-5 text-tbt-gold" />
-                      {t('context.signAndLock')}
-                    </h4>
-                    
-                    {!contextData.isSigned ? (
-                      <>
-                        <p className="text-sm text-tbt-muted mb-4">
-                          {t('context.signIntro')}
-                        </p>
-                        
-                        <div className="mb-4">
-                          <label className="input-label">{t('context.phoneNumber')} *</label>
-                          <PhoneInput
-                            value={contextData.signaturePhone}
-                            onChange={(value) => updateContext({ signaturePhone: value })}
-                            placeholder={t('context.phoneNumber')}
-                          />
-                        </div>
-
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-white text-sm font-medium">Firma para verificar</label>
+                      {contextData.isSigned && (
                         <button
                           type="button"
                           onClick={() => {
-                            if (contextData.signaturePhone.trim()) {
-                              updateContext({ isSigned: true })
+                            updateContext({ isSigned: false })
+                            const canvas = signatureCanvasRef.current
+                            if (canvas) {
+                              const ctx = canvas.getContext('2d')
+                              ctx?.clearRect(0, 0, canvas.width, canvas.height)
                             }
                           }}
-                          disabled={!contextData.signaturePhone.trim()}
-                          className={`w-full py-3 rounded-xl font-medium transition-all ${
-                            contextData.signaturePhone.trim()
-                              ? 'bg-tbt-gold text-black hover:bg-tbt-gold/90'
-                              : 'bg-tbt-border text-tbt-muted cursor-not-allowed'
-                          }`}
+                          className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
                         >
-                          <Check className="w-5 h-5 inline mr-2" />
-                          {t('context.signButton')}
+                          Limpiar
                         </button>
-                      </>
-                    ) : (
-                      <div className="text-center py-4">
-                        <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-tbt-gold/20 flex items-center justify-center">
-                          <Check className="w-8 h-8 text-tbt-gold" />
-                        </div>
-                        <p className="font-medium text-tbt-text mb-1">{t('context.signed')}</p>
-                        <p className="text-sm text-tbt-muted">
-                          {t('context.signedWith')}: {contextData.signaturePhone}
-                        </p>
-                        <p className="text-xs text-tbt-muted mt-2">
-                          {t('context.lockedMessage')}
-                        </p>
-                      </div>
-                    )}
+                      )}
+                    </div>
+                    <canvas
+                      ref={signatureCanvasRef}
+                      width={320}
+                      height={160}
+                      className="w-full rounded-2xl bg-white border border-gray-600 touch-none cursor-crosshair"
+                      onMouseDown={(e) => {
+                        isDrawingRef.current = true
+                        const canvas = signatureCanvasRef.current!
+                        const rect = canvas.getBoundingClientRect()
+                        const ctx = canvas.getContext('2d')!
+                        const scaleX = canvas.width / rect.width
+                        const scaleY = canvas.height / rect.height
+                        ctx.beginPath()
+                        ctx.moveTo((e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY)
+                      }}
+                      onMouseMove={(e) => {
+                        if (!isDrawingRef.current) return
+                        const canvas = signatureCanvasRef.current!
+                        const rect = canvas.getBoundingClientRect()
+                        const ctx = canvas.getContext('2d')!
+                        const scaleX = canvas.width / rect.width
+                        const scaleY = canvas.height / rect.height
+                        ctx.lineWidth = 2
+                        ctx.lineCap = 'round'
+                        ctx.strokeStyle = '#111'
+                        ctx.lineTo((e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY)
+                        ctx.stroke()
+                        if (!contextData.isSigned) updateContext({ isSigned: true })
+                      }}
+                      onMouseUp={() => { isDrawingRef.current = false }}
+                      onMouseLeave={() => { isDrawingRef.current = false }}
+                      onTouchStart={(e) => {
+                        e.preventDefault()
+                        isDrawingRef.current = true
+                        const canvas = signatureCanvasRef.current!
+                        const rect = canvas.getBoundingClientRect()
+                        const ctx = canvas.getContext('2d')!
+                        const t = e.touches[0]
+                        const scaleX = canvas.width / rect.width
+                        const scaleY = canvas.height / rect.height
+                        ctx.beginPath()
+                        ctx.moveTo((t.clientX - rect.left) * scaleX, (t.clientY - rect.top) * scaleY)
+                      }}
+                      onTouchMove={(e) => {
+                        e.preventDefault()
+                        if (!isDrawingRef.current) return
+                        const canvas = signatureCanvasRef.current!
+                        const rect = canvas.getBoundingClientRect()
+                        const ctx = canvas.getContext('2d')!
+                        const t = e.touches[0]
+                        const scaleX = canvas.width / rect.width
+                        const scaleY = canvas.height / rect.height
+                        ctx.lineWidth = 2
+                        ctx.lineCap = 'round'
+                        ctx.strokeStyle = '#111'
+                        ctx.lineTo((t.clientX - rect.left) * scaleX, (t.clientY - rect.top) * scaleY)
+                        ctx.stroke()
+                        if (!contextData.isSigned) updateContext({ isSigned: true })
+                      }}
+                      onTouchEnd={() => { isDrawingRef.current = false }}
+                    />
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Phase 6: Blockchain / Payment */}
+          {phase === 6 && (
+            <div className="space-y-5 pt-3">
+              {/* Description */}
+              <p className="text-sm leading-relaxed">
+                <span className="text-[#EF1385] font-semibold">Estamos listos para crear tu TBT, </span>
+                <span className="text-white font-semibold">registrarlo en la blockchain de Solana </span>
+                <span className="text-white">y enviártelo a tu número de móvil </span>
+                <span className="text-[#EF1385] font-semibold">{creatorData.phone || contextData.signaturePhone || user?.phone || ''}</span>
+                <span className="text-gray-400"> Por favor, procede con el pago.</span>
+              </p>
+
+              {paymentData.status === 'completed' ? (
+                /* Payment confirmed state */
+                <div className="flex flex-col items-center py-6 gap-3">
+                  <div className="w-16 h-16 rounded-full bg-[#BBFFA6] flex items-center justify-center">
+                    <Check className="w-8 h-8 text-[#1a1a28]" strokeWidth={3} />
+                  </div>
+                  <p className="text-[#BBFFA6] text-lg font-bold">Pago Confirmado</p>
+                </div>
+              ) : (
+                <>
+                  {/* Promo code */}
+                  <div>
+                    <label className="text-white text-sm font-medium block mb-2">Código de promo</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={couponCode}
+                        onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                        placeholder=""
+                        className="flex-1 px-4 py-2.5 bg-transparent border border-gray-600 rounded-full text-white text-sm focus:outline-none focus:border-[#EF1385] transition-colors uppercase"
+                        disabled={isValidatingCoupon || (discount?.valid ?? false)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') validateCoupon() }}
+                      />
+                      {couponCode && !discount?.valid && (
+                        <button
+                          onClick={validateCoupon}
+                          disabled={isValidatingCoupon}
+                          className="px-4 py-2 rounded-full border border-gray-600 text-gray-400 hover:border-[#EF1385] hover:text-[#EF1385] transition-colors text-sm disabled:opacity-50"
+                        >
+                          {isValidatingCoupon ? <Loader2 className="w-4 h-4 animate-spin" /> : 'OK'}
+                        </button>
+                      )}
+                    </div>
+                    {couponError && <p className="text-red-400 text-xs mt-1">{couponError}</p>}
+                  </div>
+
+                  {/* Pay button */}
+                  {(() => {
+                    const BASE = 5.00
+                    let finalPrice = BASE
+                    let discountLabel = ''
+                    if (discount?.valid) {
+                      if (discount.type === 'percentage') {
+                        finalPrice = BASE * (1 - discount.value / 100)
+                        discountLabel = `${discount.value}% de descuento`
+                      } else {
+                        finalPrice = Math.max(0, BASE - discount.value)
+                        discountLabel = discount.value >= BASE ? '100% descuento' : `$${discount.value} de descuento`
+                      }
+                    }
+                    return (
+                      <div>
+                        <button
+                          onClick={handlePayment}
+                          disabled={isLoading}
+                          className="w-full py-3 rounded-full bg-[#BBFFA6] text-[#1a1a28] text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
+                        >
+                          {isLoading ? (
+                            <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+                          ) : (
+                            `Paga $ ${finalPrice.toFixed(2)} USD`
+                          )}
+                        </button>
+                        {discountLabel && (
+                          <p className="text-gray-400 text-xs text-center mt-1">{discountLabel}</p>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </>
               )}
             </div>
           )}
 
-          {/* Phase 6: Payment */}
-          {phase === 6 && (
-            <div className="space-y-4">
-             
-              <div className="text-center py-6">
-                <div className="w-16 h-16 rounded-full bg-tbt-gold/20 flex items-center justify-center mx-auto mb-4">
-                  <CreditCard className="w-8 h-8 text-tbt-gold" />
-                </div>
-
-                <p className="text-3xl font-bold text-tbt-text mb-2">
-                  {discount?.valid && (
-                      (discount.type === 'percentage' && discount.value >= 100) ||
-                      (discount.type === 'fixed' && discount.value >= 5)
-                  ) ? (
-                    <span className="text-tbt-success">GRATIS</span>
-                  ) : (
-                    "$5.00 USD"
-                  )}
-                </p>
-                <p className="text-tbt-muted mb-6">{t('payment.fee')}</p>
-
-                {/* Discount Code Input */}
-                {!paymentData.status || paymentData.status === 'pending' ? (
-                  <div className="max-w-xs mx-auto mb-6">
-                     <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={couponCode}
-                          onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                          placeholder={t('payment.discountCode') || "Código de descuento"}
-                          className="input text-center uppercase"
-                          disabled={isValidatingCoupon || (discount?.valid ?? false)}
-                        />
-                        <button
-                          onClick={validateCoupon}
-                          disabled={!couponCode || isValidatingCoupon || (discount?.valid ?? false)}
-                          className="px-4 py-2 bg-tbt-border rounded-lg text-sm font-medium hover:bg-tbt-border/80 disabled:opacity-50"
-                        >
-                          {isValidatingCoupon ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                        </button>
-                     </div>
-                     {couponError && <p className="text-red-500 text-xs mt-1 text-left">{couponError}</p>}
-                     {discount?.valid && (
-                       <p className="text-tbt-success text-xs mt-1 text-left flex items-center gap-1">
-                         <Check className="w-3 h-3" /> Descuento aplicado: {discount.type === 'fixed' ? `$${discount.value} OFF` : `${discount.value}% OFF`}
-                       </p>
-                     )}
-                  </div>
-                ) : null}
-
-                {paymentData.status === 'completed' ? (
-                  <div className="flex items-center justify-center gap-2 text-tbt-success">
-                    <Check className="w-6 h-6" />
-                    <span className="font-medium">{t('payment.completed')}</span>
-                  </div>
-                ) : (
-                  <button
-                    onClick={handlePayment}
-                    disabled={isLoading}
-                    className="btn-primary text-lg px-8"
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        {t('payment.processing')}
-                      </>
-                    ) : (
-                      <>
-                        <CreditCard className="w-5 h-5" />
-                        {discount?.valid && (
-                            (discount.type === 'percentage' && discount.value >= 100) ||
-                            (discount.type === 'fixed' && discount.value >= 5)
-                        )
-                          ? (t('payment.completeRegistration') || "Completar Registro Gratis")
-                          : t('payment.payWithStripe')
-                        }
-                      </>
-                    )}
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Phase 7: Delivery & Confirmation */}
+          {/* Phase 7: ¡CREADO! */}
           {phase === 7 && (
-            <div className="space-y-4">
-              {/* Before Registration - Show Preview */}
+            <div className="space-y-2 pt-2">
               {!confirmationData.tbtId ? (
-                <>
-                  <div className="text-center py-4">
-                    <div className="w-16 h-16 rounded-full bg-tbt-success/20 flex items-center justify-center mx-auto mb-4">
-                      <Send className="w-8 h-8 text-tbt-success" />
-                    </div>
-                    <h4 className="text-xl font-bold text-tbt-text mb-2">{t('delivery.allReady')}</h4>
-                    <p className="text-tbt-muted">{t('delivery.reviewAndRegister')}</p>
-                  </div>
-
-                  {/* Preview of where notifications will be sent */}
-                  <div className="bg-tbt-bg rounded-xl p-4 space-y-3">
-                    <h5 className="text-sm font-medium text-tbt-muted uppercase tracking-wider mb-3">
-                      {t('delivery.notificationsTo')}
-                    </h5>
-                    
-                    {/* Phone */}
-                    <div className="flex items-center justify-between py-2 border-b border-tbt-border/50">
-                      <div className="flex items-center gap-2">
-                        <Send className="w-4 h-4 text-tbt-primary" />
-                        <span className="text-sm text-tbt-muted">{t('delivery.mms')}</span>
-                      </div>
-                      <span className="text-sm font-medium text-tbt-text">
-                        {contextData.signaturePhone || user?.phone || t('delivery.notConfigured')}
-                      </span>
-                    </div>
-
-                    {/* Email */}
-                    <div className="flex items-center justify-between py-2">
-                      <div className="flex items-center gap-2">
-                        <Mail className="w-4 h-4 text-tbt-primary" />
-                        <span className="text-sm text-tbt-muted">{t('delivery.email')}</span>
-                      </div>
-                      <span className="text-sm font-medium text-tbt-text">
-                        {creatorData.email || user?.email || t('delivery.notConfigured')}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Work Summary */}
-                  <div className="bg-tbt-gold/5 border border-tbt-gold/20 rounded-xl p-4">
-                    <div className="flex items-center gap-3">
-                      {workData.mediaPreview && (
-                        <img 
-                          src={workData.mediaPreview} 
-                          alt={workData.title}
-                          className="w-16 h-16 rounded-lg object-cover"
-                        />
-                      )}
-                      <div>
-                        <p className="font-semibold text-tbt-text">{workData.title}</p>
-                        <p className="text-sm text-tbt-muted">{workData.category}</p>
-                        <p className="text-sm text-tbt-gold font-medium">
-                          ${commProData.marketPrice} {commProData.currency}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
+                /* Before registration - trigger submit */
+                <div className="py-6 text-center">
                   <button
                     onClick={handleFinalSubmit}
                     disabled={isLoading}
-                    className="btn-primary w-full text-lg justify-center"
+                    className="w-full py-3 rounded-full bg-[#EF1385] text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
                   >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        {t('delivery.registering')}
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-5 h-5" />
-                        {t('delivery.registerTBT')}
-                      </>
-                    )}
+                    {isLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Registrar TBT'}
                   </button>
-                </>
+                </div>
               ) : (
-                /* After Registration - Show Confirmation */
-                <>
-                  <div className="text-center py-4">
-                    <div className="w-20 h-20 rounded-full bg-tbt-success/20 flex items-center justify-center mx-auto mb-4">
-                      <Check className="w-10 h-10 text-tbt-success" />
-                    </div>
-                    <h4 className="text-2xl font-bold text-tbt-text mb-2">{t('delivery.registered')}</h4>
-                    <p className="text-tbt-muted">{t('delivery.certifiedSuccess')}</p>
-                  </div>
-
-                  {/* Confirmation Details */}
-                  <div className="bg-tbt-bg rounded-xl p-4 space-y-3">
-                    {/* TBT ID */}
-                    <div className="flex items-center justify-between py-2 border-b border-tbt-border/50">
-                      <span className="text-sm text-tbt-muted">{t('delivery.confirmationNumber')}</span>
-                      <span className="font-bold text-tbt-primary">{confirmationData.tbtId}</span>
-                    </div>
-
-                    {/* Work Title */}
-                    <div className="flex items-center justify-between py-2 border-b border-tbt-border/50">
-                      <span className="text-sm text-tbt-muted">{t('delivery.work')}</span>
-                      <span className="font-medium text-tbt-text">{confirmationData.workTitle}</span>
-                    </div>
-
-                    {/* Phone - MMS Sent */}
-                    {confirmationData.phoneNumber && (
-                      <div className="flex items-center justify-between py-2 border-b border-tbt-border/50">
-                        <div className="flex items-center gap-2">
-                          <Send className="w-4 h-4 text-tbt-muted" />
-                          <span className="text-sm text-tbt-muted">{t('delivery.mmsSentTo')}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-tbt-text">{confirmationData.phoneNumber}</span>
-                          {confirmationData.smsSent && (
-                            <Check className="w-4 h-4 text-tbt-success" />
-                          )}
-                        </div>
+                /* After registration - confirmation checklist */
+                <div className="space-y-4 pt-3">
+                  {[
+                    { label: <>TBT #: <span className="text-[#EF1385] font-bold">{confirmationData.tbtId}</span></> },
+                    { label: 'Email de confirmación' },
+                    { label: <>TBT link: transb.it/tbt/{confirmationData.tbtId}</> },
+                    { label: 'TBT enviado por MMS' },
+                    { label: 'TBT Solana Blockchain sosganlink' },
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <div className="w-6 h-6 rounded-full bg-[#BBFFA6] flex items-center justify-center flex-shrink-0">
+                        <Check className="w-3.5 h-3.5 text-[#12121a]" strokeWidth={3} />
                       </div>
-                    )}
-
-                    {/* Email Sent */}
-                    {confirmationData.email && (
-                      <div className="flex items-center justify-between py-2 border-b border-tbt-border/50">
-                        <div className="flex items-center gap-2">
-                          <Mail className="w-4 h-4 text-tbt-muted" />
-                          <span className="text-sm text-tbt-muted">{t('delivery.emailSentTo')}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-tbt-text">{confirmationData.email}</span>
-                          {confirmationData.emailSent && (
-                            <Check className="w-4 h-4 text-tbt-success" />
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Solscan Link */}
-                    <div className="flex items-center justify-between py-2">
-                      <div className="flex items-center gap-2">
-                        <LinkIcon className="w-4 h-4 text-tbt-muted" />
-                        <span className="text-sm text-tbt-muted">{t('delivery.blockchain')}</span>
-                      </div>
-                      {confirmationData.solscanUrl ? (
-                        <a 
-                          href={confirmationData.solscanUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm font-medium text-tbt-primary hover:underline flex items-center gap-1"
-                        >
-                          {t('delivery.viewOnSolscan')}
-                          <Globe className="w-3 h-3" />
-                        </a>
-                      ) : (
-                        <span className="text-sm text-tbt-muted">
-                          {confirmationData.mintAddress ? confirmationData.mintAddress.slice(0, 8) + '...' : t('delivery.pending')}
-                        </span>
-                      )}
+                      <span className="text-white text-sm">{item.label}</span>
                     </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="space-y-3 pt-2">
-                    <button
-                      onClick={() => {
-                        router.push(`/work/${confirmationData.tbtId}`)
-                        router.refresh()
-                        onClose()
-                      }}
-                      className="btn-secondary w-full justify-center"
+                  ))}
+                  <div className="flex items-center gap-3 pl-9">
+                    <span className="text-white text-sm">TBT instrucciones </span>
+                    <a
+                      href={confirmationData.solscanUrl || '#'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#EF1385] text-sm hover:underline"
                     >
-                      <Eye className="w-5 h-5" />
-                      {t('delivery.viewCertificate')}
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        onClose()
-                        router.refresh()
-                      }}
-                      className="btn-primary w-full justify-center"
-                    >
-                      <Check className="w-5 h-5" />
-                      {tCommon('close')}
-                    </button>
+                      Descargar
+                    </a>
                   </div>
-                </>
+                </div>
               )}
             </div>
           )}
@@ -2561,37 +2202,74 @@ export function CreateTBTModal({ isOpen, onClose }: CreateTBTModalProps) {
         </div>
 
         {/* Navigation */}
-        {phase >= 2 && phase < 7 && (
-          <div className="flex gap-3 p-6 border-t border-tbt-border">
-            {phase > 2 && (
-              <button
-                type="button"
-                onClick={prevPhase}
-                disabled={isLoading}
-                className="btn-secondary"
-              >
-                <ArrowLeft className="w-5 h-5" />
-                {tCommon('back')}
-              </button>
-            )}
-            
-            {phase < 6 && (
-              <button
-                type="button"
-                onClick={handleNextPhase}
-                disabled={isLoading || !isPhaseComplete()}
-                className={`btn-primary flex-1 ${!isPhaseComplete() && !isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {isLoading ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <>
-                    {tCommon('continue')}
-                    <ArrowRight className="w-5 h-5" />
-                  </>
-                )}
-              </button>
-            )}
+        {phase >= 2 && (
+          <div className="flex items-center gap-3 px-6 py-4 border-t border-gray-800">
+            <button
+              type="button"
+              onClick={() => {
+                if (phase === 2 && creatorSubStep === 2) {
+                  setCreatorSubStep(1)
+                } else if (phase === 3 && workSubStep === 2) {
+                  setWorkSubStep(1)
+                } else if (phase === 3 && workSubStep === 3) {
+                  setWorkSubStep(2)
+                } else if (phase === 4 && phase4SubStep === 2) {
+                  setPhase4SubStep(1)
+                } else if (phase === 5 && phase5SubStep === 2) {
+                  setPhase5SubStep(1)
+                } else if (phase > 2) {
+                  prevPhase()
+                } else {
+                  onClose()
+                }
+              }}
+              disabled={isLoading}
+              className="w-11 h-11 rounded-full border border-gray-600 flex items-center justify-center text-gray-400 hover:border-gray-400 hover:text-white transition-colors flex-shrink-0 disabled:opacity-50"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (phase === 2 && creatorSubStep === 1) {
+                  if (isPhaseComplete()) setCreatorSubStep(2)
+                  else setError('Completa los campos requeridos')
+                } else if (phase === 3 && workSubStep === 1) {
+                  if (workData.title.trim() && workData.category.trim()) setWorkSubStep(2)
+                  else setError('Completa los campos requeridos')
+                } else if (phase === 3 && workSubStep === 2) {
+                  setWorkSubStep(3)
+                } else if (phase === 4 && phase4SubStep === 1) {
+                  setPhase4SubStep(2)
+                } else if (phase === 5 && phase5SubStep === 1) {
+                  setPhase5SubStep(2)
+                } else if (phase === 7 && confirmationData.tbtId) {
+                  onClose()
+                  router.refresh()
+                } else {
+                  handleNextPhase()
+                }
+              }}
+              disabled={isLoading
+                || (phase === 2 && creatorSubStep === 1 && !isPhaseComplete())
+                || (phase === 3 && workSubStep === 1 && (!workData.title.trim() || !workData.category.trim()))
+                || (phase === 6 && paymentData.status !== 'completed')
+              }
+              className={`flex-1 py-3 rounded-full text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                phase === 6 && paymentData.status !== 'completed'
+                  ? 'border border-gray-600 text-gray-400'
+                  : phase === 7 && !confirmationData.tbtId
+                  ? 'border border-gray-600 text-gray-400'
+                  : 'bg-[#EF1385] text-white hover:opacity-90'
+              }`}
+            >
+              {isLoading ? (
+                <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+              ) : (
+                'Siguiente'
+              )}
+            </button>
           </div>
         )}
       </div>

@@ -361,6 +361,26 @@ export async function POST(request: NextRequest) {
 
     console.log('TBT completion finished successfully')
 
+    // Register image in vector DB for future plagiarism checks (non-blocking)
+    if (work.media_url) {
+      try {
+        const imageRes = await fetch(work.media_url)
+        if (imageRes.ok) {
+          const blob = await imageRes.blob()
+          const imageForm = new FormData()
+          const fileName = work.media_url.split('/').pop() || 'image.jpg'
+          imageForm.append('file', blob, fileName)
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+          fetch(`${appUrl}/api/tbt-image/register`, {
+            method: 'POST',
+            body: imageForm,
+          }).catch((err) => console.warn('[tbt-image/register] background error:', err))
+        }
+      } catch (err) {
+        console.warn('[tbt-image/register] Could not fetch media_url:', err)
+      }
+    }
+
     return NextResponse.json({
       success: true,
       tbtId: updatedWork?.tbt_id || workId,

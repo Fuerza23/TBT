@@ -27,6 +27,7 @@ module.exports = {
         display: ['Playfair Display', 'Georgia', 'serif'],
         sans: ['DM Sans', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
+        montserrat: ['Montserrat', 'sans-serif'],
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
