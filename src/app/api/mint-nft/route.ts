@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient } from '@/lib/supabase-route'
+import { createServiceClient } from '@/lib/supabase-service'
 import { mintTBTNft, WorkNftData } from '@/lib/solana/nft'
 import { getExplorerUrl } from '@/lib/solana/config'
 
@@ -92,8 +93,10 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', workId)
 
-    // Record first owner in ownership_history
-    await supabase.from('ownership_history').insert({
+    // Record first owner in ownership_history.
+    // Service-role write: ownership_history is the immutable provenance
+    // chain (RLS: public read, service-role-only writes).
+    await createServiceClient().from('ownership_history').insert({
       work_id: workId,
       owner_name: creatorName,
       owner_user_id: user.id,

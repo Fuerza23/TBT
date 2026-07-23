@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteClient } from '@/lib/supabase-route'
+import { createServiceClient } from '@/lib/supabase-service'
 import { stripe } from '@/lib/stripe'
 import { processTransferOnChain } from '@/lib/solana/transfer'
 import { TransferHistoryEntry } from '@/lib/solana/nft'
@@ -151,8 +152,10 @@ export async function POST(request: NextRequest) {
     const newOwnerName = transfer.new_owner_name || 'Unknown'
     const previousOwnerName = transfer.from_owner_name || 'Unknown'
 
-    // Record in ownership_history
-    await supabase.from('ownership_history').insert({
+    // Record in ownership_history.
+    // Service-role write: ownership_history is the immutable provenance
+    // chain (RLS: public read, service-role-only writes).
+    await createServiceClient().from('ownership_history').insert({
       work_id: transfer.work_id,
       owner_name: newOwnerName,
       owner_user_id: transfer.to_owner_id,
